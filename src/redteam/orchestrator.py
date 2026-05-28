@@ -97,7 +97,7 @@ def run_per_goal(
         multi_turn_n_turns: Number of multi-turn turns.
     """
     attacker_model = attacker_model or os.environ.get("ATTACKER_MODEL") or \
-                     os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+                     os.environ.get("TARGET_MODEL", "qwen3.5:2b")
     attacker_base_url = attacker_base_url or os.environ.get("ATTACKER_BASE_URL") or \
                         os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
 
@@ -245,7 +245,7 @@ def run_layer1(
         usecase: Natural language description of the agent system.
         policies: List of operator policy statements.
         risk_cards: Pre-built RiskCards (None = generate from usecase + policies).
-        models: Target models to test (None = use REDTEAM_MODEL env var).
+        models: Target models to test (None = use TARGET_MODEL env var).
         attack_types: Attacks to run (None = derive from goal.attack_channels).
         max_goals: Limit number of goals (for quick runs).
         attacker_base_url: Attacker LLM endpoint.
@@ -258,14 +258,14 @@ def run_layer1(
     from redteam.models.risk import RiskCard
 
     attacker_model = attacker_model or os.environ.get("ATTACKER_MODEL") or \
-                     os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+                     os.environ.get("TARGET_MODEL", "qwen3.5:2b")
     attacker_base_url = attacker_base_url or os.environ.get("ATTACKER_BASE_URL") or \
                         os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
 
     # Default model
     if not models:
         models = [ModelConfig(
-            model=os.environ.get("REDTEAM_MODEL", "qwen3.5:2b"),
+            model=os.environ.get("TARGET_MODEL", "qwen3.5:2b"),
             base_url=os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
         )]
 

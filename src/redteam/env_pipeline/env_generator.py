@@ -150,7 +150,7 @@ def generate_environment(
     One LLM call at temperature=0 (deterministic).
     Falls through with a warning if validation fails — prototype behaviour.
     """
-    model = model or os.environ.get("ATTACKER_MODEL") or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+    model = model or os.environ.get("ATTACKER_MODEL") or os.environ.get("TARGET_MODEL", "qwen3.5:2b")
     prompt = _build_prompt(goal)
 
     log.info("Generating environment [model=%s] for goal %s (risk_type: %s)",

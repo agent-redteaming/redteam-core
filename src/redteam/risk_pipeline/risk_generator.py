@@ -112,12 +112,12 @@ def generate_risk_cards(
     Args:
         usecase: Natural language description of the agent system.
         policies: List of operator policy statements.
-        model: Model to use (defaults to REDTEAM_MODEL env var).
+        model: Model to use (defaults to TARGET_MODEL env var).
 
     Returns:
         List of RiskCard objects ready for triage.
     """
-    model = model or os.environ.get("ATTACKER_MODEL") or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+    model = model or os.environ.get("ATTACKER_MODEL") or os.environ.get("TARGET_MODEL", "qwen3.5:2b")
     prompt = _build_prompt(usecase, policies)
 
     log.info("Generating risk cards [model=%s] usecase: %s...", model, usecase[:60])

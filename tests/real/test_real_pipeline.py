@@ -1,11 +1,11 @@
 """Real end-to-end pipeline test with actual LLM calls.
 
 Requires Ollama running with a model (default: qwen3.5:2b).
-Set REDTEAM_MODEL and OPENAI_BASE_URL as needed.
+Set TARGET_MODEL and OPENAI_BASE_URL as needed.
 
 Run:
     cd redteam-core
-    REDTEAM_MODEL=qwen3.5:2b uv run pytest tests/real/ -v -s
+    TARGET_MODEL=qwen3.5:2b uv run pytest tests/real/ -v -s
 
 Each test is independent and skips cleanly if Ollama is not reachable.
 """
@@ -42,7 +42,7 @@ logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
 # Target model (agent being tested) — local Ollama
 TARGET_BASE_URL = os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
-TARGET_MODEL = os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+TARGET_MODEL = os.environ.get("TARGET_MODEL", "qwen3.5:2b")
 
 # Attacker/generator model — remote (Gemma 2 9B abliterated or similar)
 # Used for: risk generation, goal generation, env generation, injection generation

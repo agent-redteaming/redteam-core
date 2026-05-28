@@ -258,7 +258,7 @@ def run_minja(
                           Default: [0, 1, 2] (most explicit three modes).
     """
     attacker_model = attacker_model or os.environ.get("ATTACKER_MODEL") or \
-                     os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+                     os.environ.get("TARGET_MODEL", "qwen3.5:2b")
     client = _get_client(attacker_base_url)
     indication_modes = indication_modes or [0, 1, 2]
 

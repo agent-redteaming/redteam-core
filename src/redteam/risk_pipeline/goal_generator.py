@@ -142,12 +142,12 @@ def generate_goals(
 
     Args:
         triaged: A TriagedRisk with enforcement_level=AGENT (Layer 1 only).
-        model: Model to use (defaults to REDTEAM_MODEL env var).
+        model: Model to use (defaults to TARGET_MODEL env var).
 
     Returns:
         List of AttackerGoal ordered by severity (critical first).
     """
-    model = model or os.environ.get("ATTACKER_MODEL") or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+    model = model or os.environ.get("ATTACKER_MODEL") or os.environ.get("TARGET_MODEL", "qwen3.5:2b")
     prompt = _build_prompt(triaged)
 
     log.info("Generating goals for risk %s (type: %s)",

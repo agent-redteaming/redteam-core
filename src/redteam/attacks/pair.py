@@ -378,8 +378,8 @@ def run_pair(
     attacker_base_url = attacker_base_url or os.environ.get("ATTACKER_BASE_URL") or \
                         os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
     attacker_model = attacker_model or os.environ.get("ATTACKER_MODEL") or \
-                     os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
-    target_model = os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+                     os.environ.get("TARGET_MODEL", "qwen3.5:2b")
+    target_model = os.environ.get("TARGET_MODEL", "qwen3.5:2b")
 
     attacker_client = OpenAI(
         base_url=attacker_base_url,
@@ -390,6 +390,17 @@ def run_pair(
         "PAIR [mode=%s, n_streams=%d, k_iterations=%d] attacker=%s",
         mode, n_streams, k_iterations, attacker_model,
     )
+
+    # Create-then-refine: ensure environment has what PAIR needs.
+    # Adversarial mode: agent must have something to DO (exfil channel).
+    # Injection mode: must have injectable text fields AND exfil channel.
+    from redteam.attacks.env_requirements import ensure_attack_requirements
+    if mode == "adversarial":
+        reqs = ensure_attack_requirements(adapter, need_injectable=False, need_exfil=True)
+        log.info("PAIR adversarial requirements: %s", reqs)
+    elif mode == "injection":
+        reqs = ensure_attack_requirements(adapter, need_injectable=True, need_exfil=True)
+        log.info("PAIR injection requirements: %s", reqs)
 
     # For injection mode: determine injection target from dry run if not specified
     if mode == "injection":

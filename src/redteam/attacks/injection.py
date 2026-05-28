@@ -338,53 +338,63 @@ def run_direct_injection(
     """
     # Use attacker_model for LLM generation if provided, otherwise fall back to model/env
     llm_model = attacker_model or model or \
-                os.environ.get("ATTACKER_MODEL") or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
-    model = model or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+                os.environ.get("ATTACKER_MODEL") or os.environ.get("TARGET_MODEL", "qwen3.5:2b")
+    model = model or os.environ.get("TARGET_MODEL", "qwen3.5:2b")
+
+    # Create-then-refine: ensure the environment has what injection needs
+    # before deciding whether to skip. Since this is fully synthetic, we can
+    # always add missing capabilities rather than silently skipping.
+    from redteam.attacks.env_requirements import ensure_attack_requirements
+    requirements = ensure_attack_requirements(adapter, need_injectable=True, need_exfil=True)
+    log.info("Injection requirements: %s", requirements)
+
+    # Re-run dry run against the (possibly refined) environment to get fresh accessed_records
+    if not dry_run_trace.accessed_records or not requirements.get("injectable_field", True):
+        from redteam.env_pipeline.executor import dry_run as _dry_run
+        from redteam.runtime.chat_completions import ChatCompletionsRuntime
+        import os as _os
+        _runtime = ChatCompletionsRuntime(
+            base_url=_os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
+        )
+        _target_model = model or _os.environ.get("TARGET_MODEL", "qwen3.5:2b")
+        log.info("Re-running dry run after environment refinement")
+        dry_run_trace = _dry_run(env, _runtime, _target_model)
+        log.info("Post-refinement dry run: %d tool calls, %d records",
+                 len(dry_run_trace.tool_calls), len(dry_run_trace.accessed_records))
+
+    # If still no records after refinement, build synthetic targets from tool responses
+    if not dry_run_trace.accessed_records and dry_run_trace.tool_calls:
+        log.info("Building synthetic injection targets from tool responses")
+        injectable_fields = ["notes", "description", "memo", "comment", "body",
+                             "text", "content", "status", "routing", "details"]
+        for tc in dry_run_trace.tool_calls:
+            candidates = tc.response if isinstance(tc.response, list) else [tc.response]
+            for item in candidates:
+                if isinstance(item, dict):
+                    for field in injectable_fields:
+                        if field in item:
+                            rec_id = item.get("id", f"_synthetic_{tc.name}")
+                            dry_run_trace = type(dry_run_trace)(
+                                tool_calls=dry_run_trace.tool_calls,
+                                conversation=dry_run_trace.conversation,
+                                final_state_snapshot=dry_run_trace.final_state_snapshot,
+                                accessed_records=[rec_id],
+                            )
+                            break
+                    if dry_run_trace.accessed_records:
+                        break
+            if dry_run_trace.accessed_records:
+                break
 
     if not dry_run_trace.accessed_records:
-        # Fallback: try to find any record-like response from tool calls
-        # (handles case where tools return records without "id" field)
-        fallback_records = []
-        for tc in dry_run_trace.tool_calls:
-            if isinstance(tc.response, list):
-                for item in tc.response:
-                    if isinstance(item, dict) and len(item) > 1:
-                        # Use a synthetic ID based on tool call
-                        synthetic_id = f"_fallback_{tc.name}_0"
-                        # Inject into the first text-like field
-                        for field in ["notes", "description", "memo", "comment", "body",
-                                      "text", "content", "status", "routing", "details"]:
-                            if field in item:
-                                fallback_records.append((synthetic_id, field, tc))
-                                break
-            elif isinstance(tc.response, dict) and len(tc.response) > 1:
-                synthetic_id = f"_fallback_{tc.name}"
-                for field in ["notes", "description", "memo", "comment", "body",
-                              "text", "content", "status", "routing", "details"]:
-                    if field in tc.response:
-                        fallback_records.append((synthetic_id, field, tc))
-                        break
-
-        if not fallback_records:
-            log.warning("No records accessed in dry run and no injectable fields found")
-            return AttackResult(
-                attack_type=AttackType.DIRECT_INJECTION,
-                security_score=1.0,
-                utility_score=1.0,
-                policy_violated=False,
-                security_evidence=["SKIP: No accessible records or injectable fields found"],
-                utility_evidence=[],
-            )
-
-        log.info("No 'id' field records — using fallback field injection into %d tool responses",
-                 len(fallback_records))
-        # Synthesize accessed_records so the library/LLM can proceed
-        from dataclasses import replace as _replace
-        dry_run_trace = type(dry_run_trace)(
-            tool_calls=dry_run_trace.tool_calls,
-            conversation=dry_run_trace.conversation,
-            final_state_snapshot=dry_run_trace.final_state_snapshot,
-            accessed_records=[r[0] for r in fallback_records],
+        log.warning("No injectable targets found even after refinement")
+        return AttackResult(
+            attack_type=AttackType.DIRECT_INJECTION,
+            security_score=1.0,
+            utility_score=1.0,
+            policy_violated=False,
+            security_evidence=["SKIP: No injectable targets found after environment refinement"],
+            utility_evidence=[],
         )
 
     # Build injection scenario (library first, LLM fallback)

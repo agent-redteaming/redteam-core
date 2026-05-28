@@ -20,7 +20,7 @@ Usage examples:
   ATTACKER_BASE_URL=https://my-attacker.example.com/v1 \\
   ATTACKER_MODEL=gemma-2-9b-abliterated \\
   OPENAI_BASE_URL=http://localhost:11434/v1 \\
-  REDTEAM_MODEL=qwen3.5:2b \\
+  TARGET_MODEL=qwen3.5:2b \\
   redteam-run --usecase "..." --policy "..."
 
   # Quick test: limit to 1 goal, fast attacks only
@@ -33,9 +33,9 @@ Usage examples:
 
 Environment variables:
   OPENAI_BASE_URL       Target model endpoint (default: http://localhost:11434/v1)
-  REDTEAM_MODEL         Target model name (default: qwen3.5:2b)
+  TARGET_MODEL         Target model name (default: qwen3.5:2b)
   ATTACKER_BASE_URL     Attacker model endpoint (defaults to OPENAI_BASE_URL)
-  ATTACKER_MODEL        Attacker model name (defaults to REDTEAM_MODEL)
+  ATTACKER_MODEL        Attacker model name (defaults to TARGET_MODEL)
   TMAP_ITERATIONS       T-MAP generations override
 """
 
@@ -81,7 +81,7 @@ ATTACK_NAME_MAP = {
 @click.option("--risk-card", "-r", "risk_card_path", default=None, type=click.Path(exists=True),
               help="Path to YAML file with pre-built RiskCards (optional).")
 @click.option("--model", "-m", "models", multiple=True,
-              help="Target model to test (repeat for multiple). Default: REDTEAM_MODEL env var.")
+              help="Target model to test (repeat for multiple). Default: TARGET_MODEL env var.")
 @click.option("--attacks", "-a", multiple=True,
               type=click.Choice(VALID_ATTACKS, case_sensitive=False),
               help=f"Attacks to run (default: derived from goals). Options: {', '.join(VALID_ATTACKS)}")
@@ -144,7 +144,7 @@ def main(
     # Parse models
     from redteam.models.report import ModelConfig
     target_base_url = os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
-    default_model = os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+    default_model = os.environ.get("TARGET_MODEL", "qwen3.5:2b")
 
     model_configs: list[ModelConfig] = []
     for m in models:

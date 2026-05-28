@@ -144,7 +144,7 @@ def run_multi_turn(
         n_turns: Number of conversation turns (default: 4)
     """
     attacker_model = attacker_model or os.environ.get("ATTACKER_MODEL") or \
-                     os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+                     os.environ.get("TARGET_MODEL", "qwen3.5:2b")
     client = _get_client(attacker_base_url)
 
     log.info("Multi-turn [strategy=%s, n_turns=%d]", strategy, n_turns)
@@ -177,7 +177,7 @@ def run_multi_turn(
         runtime = ChatCompletionsRuntime(
             base_url=os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
         )
-        target_model = os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+        target_model = os.environ.get("TARGET_MODEL", "qwen3.5:2b")
 
         turn_trace = _run_agent_loop(
             adapter.env_instance,

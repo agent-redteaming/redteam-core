@@ -587,7 +587,7 @@ def run_tmap(
     attacker_base_url = attacker_base_url or os.environ.get("ATTACKER_BASE_URL") or \
                         os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
     attacker_model = attacker_model or os.environ.get("ATTACKER_MODEL") or \
-                     os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+                     os.environ.get("TARGET_MODEL", "qwen3.5:2b")
 
     client = OpenAI(
         base_url=attacker_base_url,

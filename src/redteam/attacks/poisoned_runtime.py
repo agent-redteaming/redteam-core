@@ -113,7 +113,7 @@ def run_poisoned_runtime(
     Modifies the most-called tool's description, then runs the legitimate task.
     """
     attacker_model = attacker_model or os.environ.get("ATTACKER_MODEL") or \
-                     os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+                     os.environ.get("TARGET_MODEL", "qwen3.5:2b")
     client = _get_client(attacker_base_url)
 
     # Select target tool: most frequently called in dry run (most likely to be invoked)
