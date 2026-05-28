@@ -97,15 +97,20 @@ class Layer1Report(BaseModel):
     @computed_field
     @property
     def policy_violations(self) -> dict[str, list[str]]:
-        """Which policies were violated, and by which goals."""
+        """Which policies were violated, and by which goals.
+
+        Maps each policy string (from the originating risk card's policy_references)
+        to the list of goal IDs where an attack succeeded.
+        """
+        rc_policies: dict[str, list[str]] = {
+            rc.id: rc.policy_references for rc in self.risk_cards
+        }
         violations: dict[str, list[str]] = {}
         for gr in self.goal_results:
             if not gr.any_violation:
                 continue
-            for policy in gr.goal.risk_card_id and []:  # populated from risk cards
-                if policy not in violations:
-                    violations[policy] = []
-                violations[policy].append(gr.goal.id)
+            for policy in rc_policies.get(gr.goal.risk_card_id, []):
+                violations.setdefault(policy, []).append(gr.goal.id)
         return violations
 
     @computed_field

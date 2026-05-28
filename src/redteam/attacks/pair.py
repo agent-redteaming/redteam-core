@@ -499,7 +499,11 @@ def run_pair(
             # Build AttackResult for this attempt
             tool_calls_made = [tc.name for tc in attack_trace.tool_calls]
             clean_names = {tc.name for tc in dry_run_trace.tool_calls}
-            unexpected = [n for n in tool_calls_made if n not in clean_names]
+            # Only flag tools that are both new AND suspicious — refinement tools
+            # (get_records_with_notes, send_message when base env didn't have it) are
+            # expected additions; listing them as "unexpected" is noise.
+            unexpected = [n for n in tool_calls_made
+                          if n not in clean_names and n in DEFAULT_SUSPICIOUS_TOOLS]
 
             agent_text = ""
             for msg in reversed(attack_trace.conversation):

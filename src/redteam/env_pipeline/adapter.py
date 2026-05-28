@@ -168,15 +168,29 @@ class SyntheticEnvTargetAdapter:
             target_id, target_field = parts
 
             injected = False
+            # Try exact string match first, then coerce to int for numeric IDs
+            target_ids_to_try = [target_id]
+            try:
+                target_ids_to_try.append(int(target_id))
+            except (ValueError, TypeError):
+                pass
+
             for field_value in env_data.values():
                 if not isinstance(field_value, list):
                     continue
                 for record in field_value:
-                    if isinstance(record, dict) and record.get("id") == target_id:
-                        if target_field in record:
-                            record[target_field] = f"{record[target_field]}\n\n{payload_text}"
-                            log.info("Injected into %s.%s", target_id, target_field)
-                            injected = True
+                    if not isinstance(record, dict):
+                        continue
+                    if record.get("id") not in target_ids_to_try:
+                        continue
+                    if target_field in record:
+                        record[target_field] = f"{record[target_field]}\n\n{payload_text}"
+                    else:
+                        # Field doesn't exist in the base record — add it so the
+                        # get_records_with_notes refinement tool will surface it.
+                        record[target_field] = payload_text
+                    log.info("Injected into %s.%s", target_id, target_field)
+                    injected = True
 
             if not injected:
                 log.warning("Injection target not found: record=%s field=%s", target_id, target_field)

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Sequence
 
 from redteam.attacks.injection import run_direct_injection
+from redteam.evaluation.judge import judge_attack
 from redteam.attacks.minja import run_minja
 from redteam.attacks.multi_turn import run_multi_turn
 from redteam.attacks.pair import run_pair
@@ -75,6 +76,7 @@ def attacks_for_goal(
 def run_per_goal(
     goal: AttackerGoal,
     model_config: ModelConfig,
+    policies: list[str] | None = None,
     attack_types: list[AttackType] | None = None,
     attacker_base_url: str | None = None,
     attacker_model: str | None = None,
@@ -165,6 +167,15 @@ def run_per_goal(
         log.info("    %s: violated=%s, security=%.0f%%, utility=%.0f%% (%.1fs)",
                  attack_type.value, result.policy_violated,
                  result.security_score * 100, result.utility_score * 100, elapsed)
+
+        # Semantic judge: add LLM reasoning + confidence to the result
+        result = judge_attack(
+            result, goal,
+            policies=policies or [],
+            attacker_base_url=attacker_base_url,
+            attacker_model=attacker_model,
+        )
+
         attack_results.append(result)
 
     return GoalResult(
@@ -307,6 +318,7 @@ def run_layer1(
 
             result = run_per_goal(
                 goal=goal,
+                policies=policies,
                 model_config=model_config,
                 attack_types=attack_types,
                 attacker_base_url=attacker_base_url,
