@@ -76,9 +76,10 @@ OWASP ASI CATEGORIES — map each goal to the architectural component that fails
 """
 
 
-def _get_client() -> OpenAI:
+def _get_client(base_url: str | None = None) -> OpenAI:
     return OpenAI(
-        base_url=os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
+        base_url=base_url or os.environ.get("ATTACKER_BASE_URL")
+               or os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
         api_key=os.environ.get("OPENAI_API_KEY", "ollama"),
     )
 
@@ -135,6 +136,7 @@ def _build_prompt(triaged: TriagedRisk) -> str:
 def generate_goals(
     triaged: TriagedRisk,
     model: str | None = None,
+    base_url: str | None = None,
 ) -> list[AttackerGoal]:
     """Generate 2-3 specific attacker goals from a triaged risk card.
 
@@ -145,15 +147,16 @@ def generate_goals(
     Returns:
         List of AttackerGoal ordered by severity (critical first).
     """
-    model = model or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+    model = model or os.environ.get("ATTACKER_MODEL") or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
     prompt = _build_prompt(triaged)
 
     log.info("Generating goals for risk %s (type: %s)",
              triaged.risk_card.id, triaged.risk_type)
 
-    response = _get_client().chat.completions.create(
+    response = _get_client(base_url).chat.completions.create(
         model=model,
         temperature=0,
+        max_tokens=2048,
         messages=[
             {
                 "role": "system",

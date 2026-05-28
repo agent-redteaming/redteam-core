@@ -40,3 +40,7 @@ select = ["F", "UP", "I", "ERA", "N", "RUF"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s %(name)s %(levelname)s %(message)s"
+log_cli_date_format = "%H:%M:%S"

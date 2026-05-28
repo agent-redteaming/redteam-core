@@ -212,7 +212,8 @@ def _run_agent_loop(
     tool_calls_recorded: list[ToolCall] = []
     turn = 0
 
-    for _ in range(MAX_TURNS):
+    for turn_n in range(MAX_TURNS):
+        log.info("Agent turn %d/%d", turn_n + 1, MAX_TURNS)
         agent_turn = runtime.complete(messages, tool_schemas, model, temperature=0.0)
 
         if not agent_turn.tool_calls:
@@ -296,7 +297,7 @@ def dry_run(
     model: str,
 ) -> DryRunTrace:
     """Run agent against the clean environment. Returns the baseline trace."""
-    log.info("Dry run for goal %s", env.goal_id)
+    log.info("Dry run [model=%s] for goal %s", model, env.goal_id)
     env_instance, exec_globals = _load_environment(env)
     tool_schemas = _extract_tool_schemas(exec_globals)
     log.info("Tools: %s", [t["function"]["name"] for t in tool_schemas])

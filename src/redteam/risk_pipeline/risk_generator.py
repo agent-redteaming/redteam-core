@@ -34,9 +34,10 @@ from redteam.models.risk import (
 log = logging.getLogger(__name__)
 
 
-def _get_client() -> OpenAI:
+def _get_client(base_url: str | None = None) -> OpenAI:
     return OpenAI(
-        base_url=os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
+        base_url=base_url or os.environ.get("ATTACKER_BASE_URL")
+               or os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
         api_key=os.environ.get("OPENAI_API_KEY", "ollama"),
     )
 
@@ -104,6 +105,7 @@ def generate_risk_cards(
     usecase: str,
     policies: list[str],
     model: str | None = None,
+    base_url: str | None = None,
 ) -> list[RiskCard]:
     """Generate RiskCards from a usecase description and policy statements.
 
@@ -115,14 +117,15 @@ def generate_risk_cards(
     Returns:
         List of RiskCard objects ready for triage.
     """
-    model = model or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
+    model = model or os.environ.get("ATTACKER_MODEL") or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
     prompt = _build_prompt(usecase, policies)
 
-    log.info("Generating risk cards for usecase: %s...", usecase[:60])
+    log.info("Generating risk cards [model=%s] usecase: %s...", model, usecase[:60])
 
-    response = _get_client().chat.completions.create(
+    response = _get_client(base_url).chat.completions.create(
         model=model,
         temperature=0,
+        max_tokens=4096,
         messages=[
             {
                 "role": "system",
