@@ -93,12 +93,22 @@ def _load_environment(
     env_class = exec_globals["Environment"]
     seed = json.loads(_fix_json(env.seed_data_json))
 
-    # Normalise if LLM returned a list instead of a dict
+    # Normalise if LLM returned a list instead of a dict.
+    # Two patterns seen in practice:
+    #   A) [{"purchase_orders": [...]}]  — seed dict wrapped in a one-element list
+    #   B) [{id:1,...}, {id:2,...}]      — flat list of entity records
     if isinstance(seed, list):
-        model_fields = env_class.model_fields
-        list_fields = [k for k, v in model_fields.items() if "list" in str(v.annotation).lower()]
-        if list_fields:
-            seed = {list_fields[0]: seed}
+        model_field_keys = set(env_class.model_fields.keys())
+        if (len(seed) == 1 and isinstance(seed[0], dict)
+                and any(k in model_field_keys for k in seed[0].keys())):
+            # Pattern A: unwrap the wrapper list
+            seed = seed[0]
+        else:
+            # Pattern B: map flat list to the first list-typed field
+            list_fields = [k for k, v in env_class.model_fields.items()
+                           if "list" in str(v.annotation).lower()]
+            if list_fields:
+                seed = {list_fields[0]: seed}
 
     # Merge extra seed data (from create-then-refine)
     extra = json.loads(extra_seed_json) if extra_seed_json else {}
@@ -109,8 +119,66 @@ def _load_environment(
             else:
                 seed[key] = value
 
-    env_instance = env_class(**seed)
+    try:
+        env_instance = env_class(**seed)
+    except Exception as exc:
+        log.warning("Strict seed validation failed (%s) — using model_construct fallback", exc)
+        env_instance = _construct_from_seed(env_class, seed, exec_globals)
     return env_instance, exec_globals
+
+
+def _construct_from_seed(model_class: type, data: dict, exec_globals: dict) -> Any:
+    """Recursively construct a model from seed data bypassing validation.
+
+    Used when the LLM generates seed data with field names that don't exactly
+    match the model (e.g., 'order_id' vs 'id'). Tries to map known fields and
+    falls back to model_construct() so execution can continue.
+    """
+    if not isinstance(data, dict):
+        return data
+
+    field_info = getattr(model_class, "model_fields", {})
+    cleaned: dict = {}
+    for field_name, field in field_info.items():
+        if field_name in data:
+            val = data[field_name]
+            annotation = field.annotation
+            origin = getattr(annotation, "__origin__", None)
+            if origin is list:
+                args = getattr(annotation, "__args__", [])
+                nested_cls = args[0] if args else None
+                if nested_cls and isinstance(nested_cls, type) and hasattr(nested_cls, "model_fields"):
+                    val = [
+                        _construct_from_seed(nested_cls, v, exec_globals) if isinstance(v, dict) else v
+                        for v in (val if isinstance(val, list) else [])
+                    ]
+            elif isinstance(annotation, type) and hasattr(annotation, "model_fields"):
+                if isinstance(val, dict):
+                    val = _construct_from_seed(annotation, val, exec_globals)
+            cleaned[field_name] = val
+        else:
+            # Try to set defaults for missing required fields to keep dry run running
+            default = field.default
+            if default is not None and str(default) != "PydanticUndefined":
+                cleaned[field_name] = default
+            elif "list" in str(field.annotation).lower():
+                cleaned[field_name] = []
+            elif "str" in str(field.annotation).lower():
+                cleaned[field_name] = ""
+            elif "float" in str(field.annotation).lower() or "int" in str(field.annotation).lower():
+                cleaned[field_name] = 0
+            else:
+                cleaned[field_name] = None  # model_construct accepts None for any type
+
+    return model_class.model_construct(**cleaned)
+
+
+def _safe_instantiate(env_class: type, data: dict, exec_globals: dict | None = None) -> Any:
+    """Instantiate env_class from a dict, falling back to model_construct if validation fails."""
+    try:
+        return env_class(**data)
+    except Exception:
+        return _construct_from_seed(env_class, data, exec_globals or {})
 
 
 def _extract_tool_schemas(exec_globals: dict) -> list[dict]:
@@ -165,13 +233,67 @@ def _extract_tool_schemas(exec_globals: dict) -> list[dict]:
     return tools
 
 
+_BUILTIN_TYPES: dict[str, type] = {"int": int, "float": float, "str": str, "bool": bool}
+
+
+def _resolve_annotation(ann: Any, exec_globals: dict) -> Any:
+    """Resolve string annotations (from __future__ annotations) to actual types.
+
+    With `from __future__ import annotations`, inspect.signature returns param
+    annotations as strings ('int', 'str') rather than actual types. We resolve
+    them by checking builtins first, then the exec namespace.
+    """
+    if not isinstance(ann, str):
+        return ann
+    return _BUILTIN_TYPES.get(ann) or exec_globals.get(ann) or ann
+
+
+def _to_jsonable(result: Any) -> Any:
+    """Convert Pydantic model instances to dicts so tool responses are JSON-serialisable.
+
+    Generated tool code often returns Pydantic objects directly (violating the
+    COMMON_RULES "return dicts" constraint). This normalises them so:
+      - JSON serialisation works correctly in agent messages
+      - _extract_accessed_records can find the 'id' field
+    """
+    if hasattr(result, "model_dump"):
+        return result.model_dump()
+    if isinstance(result, list):
+        return [item.model_dump() if hasattr(item, "model_dump") else item for item in result]
+    return result
+
+
 def _call_tool(name: str, arguments: dict, env_instance: Any, exec_globals: dict) -> Any:
-    """Execute a tool function against the live environment."""
+    """Execute a tool function against the live environment.
+
+    Two post-processing steps:
+      1. Coerce argument types to match annotated parameter types. Handles the
+         common case where the model passes "12345" (str) but the function
+         expects int. Also resolves string annotations from __future__ imports.
+      2. Convert Pydantic model return values to dicts so responses are always
+         JSON-serialisable and record IDs can be extracted.
+    """
     func = exec_globals.get(name)
     if func is None:
         return {"error": f"Unknown tool: {name}"}
     try:
-        return func(env_instance, **arguments)
+        sig = inspect.signature(func)
+        coerced: dict = {}
+        for pname, param in sig.parameters.items():
+            if pname == "env":
+                continue
+            if pname not in arguments:
+                continue
+            val = arguments[pname]
+            ann = _resolve_annotation(param.annotation, exec_globals)
+            if ann not in (inspect.Parameter.empty, Any) and callable(ann):
+                try:
+                    val = ann(val)
+                except (ValueError, TypeError):
+                    pass
+            coerced[pname] = val
+        result = func(env_instance, **coerced)
+        return _to_jsonable(result)
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}"}
 

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, computed_field
 
 from redteam.models.attacks import AttackResult
 from redteam.models.environment import DryRunTrace, GeneratedEnvironment
-from redteam.models.risk import ASICategory, AttackerGoal
+from redteam.models.risk import ASICategory, AttackerGoal, RiskCard
 
 
 class ModelConfig(BaseModel):
@@ -73,6 +73,7 @@ class Layer1Report(BaseModel):
 
     usecase: str
     policies: list[str]
+    risk_cards: list[RiskCard] = Field(default_factory=list)
     goal_results: list[GoalResult] = Field(default_factory=list)
 
     # Aggregated views (computed on demand)

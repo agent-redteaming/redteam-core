@@ -18,6 +18,7 @@ from copy import deepcopy
 from typing import Any
 
 from redteam.env_pipeline import executor as _executor
+from redteam.env_pipeline.executor import _safe_instantiate
 from redteam.models.attacks import InjectionScenario
 from redteam.models.environment import (
     DryRunTrace,
@@ -125,7 +126,7 @@ class SyntheticEnvTargetAdapter:
                     current[key].extend(value)
                 else:
                     current[key] = value
-            self.env_instance = env_class(**current)
+            self.env_instance = _safe_instantiate(env_class, current, self.exec_globals)
             # Update clean state to include the new data
             self._clean_state_json = json.dumps(current, default=str)
 
@@ -149,7 +150,7 @@ class SyntheticEnvTargetAdapter:
         """Reset environment to clean state."""
         env_class = type(self.env_instance)
         clean = json.loads(self._clean_state_json)
-        self.env_instance = env_class(**clean)
+        self.env_instance = _safe_instantiate(env_class, clean, self.exec_globals)
 
     def _apply_injections(self, injections: dict[str, str]) -> None:
         """Apply injections in {record_id:field → payload_text} format.
@@ -182,4 +183,4 @@ class SyntheticEnvTargetAdapter:
 
         # Re-instantiate environment with injected data
         env_class = type(self.env_instance)
-        self.env_instance = env_class(**env_data)
+        self.env_instance = _safe_instantiate(env_class, env_data, self.exec_globals)

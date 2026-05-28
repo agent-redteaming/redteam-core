@@ -321,5 +321,6 @@ def run_layer1(
     return Layer1Report(
         usecase=usecase,
         policies=policies,
+        risk_cards=risk_cards,
         goal_results=goal_results,
     )
