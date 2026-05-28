@@ -342,14 +342,49 @@ def run_direct_injection(
     model = model or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
 
     if not dry_run_trace.accessed_records:
-        log.warning("No records accessed in dry run — injection has no target")
-        return AttackResult(
-            attack_type=AttackType.DIRECT_INJECTION,
-            security_score=1.0,
-            utility_score=1.0,
-            policy_violated=False,
-            security_evidence=["SKIP: No records accessed in dry run — nothing to inject into"],
-            utility_evidence=[],
+        # Fallback: try to find any record-like response from tool calls
+        # (handles case where tools return records without "id" field)
+        fallback_records = []
+        for tc in dry_run_trace.tool_calls:
+            if isinstance(tc.response, list):
+                for item in tc.response:
+                    if isinstance(item, dict) and len(item) > 1:
+                        # Use a synthetic ID based on tool call
+                        synthetic_id = f"_fallback_{tc.name}_0"
+                        # Inject into the first text-like field
+                        for field in ["notes", "description", "memo", "comment", "body",
+                                      "text", "content", "status", "routing", "details"]:
+                            if field in item:
+                                fallback_records.append((synthetic_id, field, tc))
+                                break
+            elif isinstance(tc.response, dict) and len(tc.response) > 1:
+                synthetic_id = f"_fallback_{tc.name}"
+                for field in ["notes", "description", "memo", "comment", "body",
+                              "text", "content", "status", "routing", "details"]:
+                    if field in tc.response:
+                        fallback_records.append((synthetic_id, field, tc))
+                        break
+
+        if not fallback_records:
+            log.warning("No records accessed in dry run and no injectable fields found")
+            return AttackResult(
+                attack_type=AttackType.DIRECT_INJECTION,
+                security_score=1.0,
+                utility_score=1.0,
+                policy_violated=False,
+                security_evidence=["SKIP: No accessible records or injectable fields found"],
+                utility_evidence=[],
+            )
+
+        log.info("No 'id' field records — using fallback field injection into %d tool responses",
+                 len(fallback_records))
+        # Synthesize accessed_records so the library/LLM can proceed
+        from dataclasses import replace as _replace
+        dry_run_trace = type(dry_run_trace)(
+            tool_calls=dry_run_trace.tool_calls,
+            conversation=dry_run_trace.conversation,
+            final_state_snapshot=dry_run_trace.final_state_snapshot,
+            accessed_records=[r[0] for r in fallback_records],
         )
 
     # Build injection scenario (library first, LLM fallback)
