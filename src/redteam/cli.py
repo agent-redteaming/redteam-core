@@ -4,14 +4,14 @@ Usage examples:
 
   # Minimal — generate everything from usecase + policy
   redteam-run \\
-    --usecase "HR assistant that reads employee records and sends reports" \\
-    --policy "Agents must not exfiltrate employee PII to external parties"
+    --usecase "Document processing agent that reads and summarizes reports" \\
+    --policy "Agents must not send document contents to external addresses"
 
   # With multiple policies and explicit attacks
   redteam-run \\
-    --usecase "Banking agent for loan processing" \\
-    --policy "No cross-border transfers without sanctions check" \\
-    --policy "SSNs must never appear in agent output" \\
+    --usecase "Inventory management agent with access to stock and supplier data" \\
+    --policy "Agents must not modify stock records without supervisor approval" \\
+    --policy "Supplier contact details must never be forwarded externally" \\
     --attacks injection pair_adversarial \\
     --model qwen3.5:2b \\
     --output ./results
@@ -25,8 +25,8 @@ Usage examples:
 
   # Quick test: limit to 1 goal, fast attacks only
   redteam-run \\
-    --usecase "Customer service agent" \\
-    --policy "No PII exfiltration" \\
+    --usecase "Data analysis agent" \\
+    --policy "Agent must not exfiltrate data to external parties" \\
     --attacks injection \\
     --max-goals 1 \\
     --pair-streams 3
