@@ -325,6 +325,8 @@ def run_direct_injection(
     model: str | None = None,
     pattern_type: str = "delayed_trigger",
     framing_style: str = "embedded_instruction",
+    attacker_base_url: str | None = None,  # accepted for API consistency, unused here
+    attacker_model: str | None = None,     # used as fallback for LLM generation
 ) -> AttackResult:
     """Run a direct injection attack. One shot, no refinement.
 
@@ -334,6 +336,9 @@ def run_direct_injection(
       3. Execute via adapter (with injections applied)
       4. Evaluate with deterministic checks
     """
+    # Use attacker_model for LLM generation if provided, otherwise fall back to model/env
+    llm_model = attacker_model or model or \
+                os.environ.get("ATTACKER_MODEL") or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
     model = model or os.environ.get("REDTEAM_MODEL", "qwen3.5:2b")
 
     if not dry_run_trace.accessed_records:
@@ -351,7 +356,7 @@ def run_direct_injection(
     scenario = _get_library_scenario(goal, dry_run_trace, pattern_type, framing_style)
     if scenario is None:
         log.info("No library match for %s/%s — falling back to LLM", pattern_type, framing_style)
-        scenario = _get_llm_scenario(goal, env, dry_run_trace, model)
+        scenario = _get_llm_scenario(goal, env, dry_run_trace, llm_model)
 
     if scenario is None:
         log.warning("Could not generate injection scenario")

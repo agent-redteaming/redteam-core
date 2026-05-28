@@ -124,7 +124,10 @@ def _validate(env: GeneratedEnvironment) -> bool:
 
         env_class(**seed)
 
+        # Inject common stdlib imports before executing tool code
+        # Prevents NameError for modules commonly used in generated tools
         tool_globals = dict(exec_globals)
+        exec("import datetime, json, math, re, random, uuid", tool_globals)
         exec(env.tool_function_code, tool_globals)
 
         for tool_name in env.expected_tool_sequence:

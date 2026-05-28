@@ -77,6 +77,8 @@ def _load_environment(
     both the Pydantic classes and all tool functions.
     """
     exec_globals: dict[str, Any] = {}
+    # Inject common stdlib so generated tool code doesn't get NameErrors
+    exec("import datetime, json, math, re, random, uuid", exec_globals)
     exec(_strip_code_fences(env.pydantic_model_code), exec_globals)
     exec(_strip_code_fences(env.tool_function_code), exec_globals)
 
