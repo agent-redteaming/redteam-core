@@ -190,7 +190,9 @@ def _serialize_trace(trace: Any) -> dict | None:
             {
                 "name": tc.name,
                 "arguments": tc.arguments,
-                "response": tc.response,
+                "response": (tc.response.model_dump() if hasattr(tc.response, "model_dump")
+                             else [i.model_dump() if hasattr(i, "model_dump") else i for i in tc.response]
+                             if isinstance(tc.response, list) else tc.response),
                 "turn_number": tc.turn_number,
             }
             for tc in trace.tool_calls
@@ -228,7 +230,7 @@ def _parse_seed_data(seed_json: str) -> Any:
 
 def _render_html(data: dict) -> str:
     """Return the complete self-contained HTML string."""
-    report_json = json.dumps(data, indent=2, ensure_ascii=False)
+    report_json = json.dumps(data, indent=2, ensure_ascii=False, default=str)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1069,14 +1071,57 @@ function renderConversation(conversation) {{
   if (!conversation || conversation.length === 0) return '<p class="text-dim">No conversation data.</p>';
   return conversation.map(msg => {{
     const role = msg.role || 'unknown';
-    const content = extractContent(msg.content);
+    // Skip repetitive system prompt
+    if (role === 'system') return '';
     const roleClass = roleToClass(role);
+
+    let bodyHtml = '';
+
+    // Tool calls embedded in assistant message
+    if (msg.tool_calls && msg.tool_calls.length > 0) {{
+      bodyHtml += msg.tool_calls.map(tc => {{
+        const fn = tc.function || {{}};
+        let argsStr = fn.arguments || '';
+        try {{ argsStr = JSON.stringify(JSON.parse(argsStr), null, 2); }} catch(e) {{}}
+        return `<div class="tool-call-box" style="margin-bottom:8px">
+          <div class="tool-call-header">${{esc(fn.name || '?')}}</div>
+          <pre style="margin:0;border:none;border-radius:0;font-size:11px;max-height:120px;overflow:auto">${{esc(argsStr)}}</pre>
+        </div>`;
+      }}).join('');
+    }}
+
+    // Reasoning (qwen chain-of-thought)
+    if (msg.reasoning) {{
+      const r = msg.reasoning.length > 400 ? msg.reasoning.slice(0, 400) + '…' : msg.reasoning;
+      bodyHtml += `<details style="margin-bottom:6px"><summary style="font-size:11px;color:var(--text-dim);cursor:pointer">Reasoning (chain-of-thought)</summary>
+        <div style="font-size:12px;color:var(--text-dim);padding:8px 0;white-space:pre-wrap">${{esc(r)}}</div>
+      </details>`;
+    }}
+
+    // Main content
+    const rawContent = extractContent(msg.content);
+    if (rawContent) {{
+      // Tool response: try to pretty-print JSON
+      if (role === 'tool') {{
+        let pretty = rawContent;
+        try {{
+          const parsed = JSON.parse(rawContent);
+          pretty = JSON.stringify(parsed, null, 2);
+        }} catch(e) {{}}
+        const truncated = pretty.length > 800 ? pretty.slice(0, 800) + '\\n…(truncated)' : pretty;
+        bodyHtml += `<pre style="font-size:11px;max-height:200px;overflow:auto;margin:0">${{esc(truncated)}}</pre>`;
+      }} else {{
+        bodyHtml += `<div class="raw-content">${{esc(rawContent)}}</div>`;
+      }}
+    }}
+
+    if (!bodyHtml) return '';
     return `<div class="raw-msg">
       <span class="raw-role ${{roleClass}}">${{role}}</span>
-      ${{msg.name ? `<span style="color:var(--text-dim);font-size:11px;margin-left:4px">${{esc(msg.name)}}</span>` : ''}}
-      <div class="raw-content">${{esc(content)}}</div>
+      ${{msg.tool_call_id ? `<span style="color:var(--text-dim);font-size:11px;margin-left:4px">${{esc(msg.tool_call_id)}}</span>` : ''}}
+      <div style="margin-top:6px">${{bodyHtml}}</div>
     </div>`;
-  }}).join('');
+  }}).filter(Boolean).join('');
 }}
 
 function renderToolCalls(toolCalls) {{
