@@ -97,6 +97,8 @@ ATTACK_NAME_MAP = {
               help="Multi-turn: number of conversation turns.")
 @click.option("--output", "-o", default="./runs", show_default=True,
               help="Directory to save results JSON.")
+@click.option("--output-html", is_flag=True, default=False,
+              help="Also save a self-contained interactive HTML report alongside the JSON.")
 @click.option("--verbose", "-v", is_flag=True, default=False,
               help="Show DEBUG logs.")
 def main(
@@ -111,6 +113,7 @@ def main(
     tmap_iterations: int,
     multi_turn_turns: int,
     output: str,
+    output_html: bool,
     verbose: bool,
 ) -> None:
     """redteam-core Layer 1 — systematic synthetic agent red-teaming."""
@@ -217,7 +220,13 @@ def main(
 
     # Print summary and save
     print_summary(report)
-    save_report(report, Path(output))
+    json_path = save_report(report, Path(output))
+
+    if output_html:
+        from redteam.report_html import generate_html_report
+        html_path = str(json_path).replace(".json", ".html")
+        generate_html_report(report, html_path)
+        console.print(f"[dim]HTML report saved to:[/dim] [cyan]{html_path}[/cyan]")
 
 
 if __name__ == "__main__":

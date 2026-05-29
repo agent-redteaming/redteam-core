@@ -95,6 +95,10 @@ class AttackResult(BaseModel):
     judge_reasoning: str = ""
     judge_confidence: float = 0.0
 
+    # Injection-specific: payloads placed in the environment (empty for non-injection attacks)
+    injection_payloads: list[dict] = Field(default_factory=list)
+    # Each item: {target_record_id, target_field, payload_text, pattern_type, framing_style}
+
     # Raw traces for inspection
     clean_trace: DryRunTrace | None = None   # baseline from dry run
     attack_trace: DryRunTrace | None = None  # what happened under attack

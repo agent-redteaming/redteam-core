@@ -450,9 +450,22 @@ def run_direct_injection(
     attack_trace = adapter.execute(env.user_task_prompt, injections=injections)
 
     # Evaluate
-    return evaluate(
+    result = evaluate(
         attack_type=AttackType.DIRECT_INJECTION,
         clean_trace=dry_run_trace,
         attack_trace=attack_trace,
         injection=scenario,
     )
+
+    # Attach payload metadata so the report can render injection details
+    result.injection_payloads = [
+        {
+            "target_record_id": p.target_record_id,
+            "target_field": p.target_field,
+            "payload_text": p.payload_text,
+            "pattern_type": p.pattern_type,
+            "framing_style": p.framing_style,
+        }
+        for p in scenario.payloads
+    ]
+    return result

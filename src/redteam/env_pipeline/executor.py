@@ -216,6 +216,7 @@ def _extract_tool_schemas(exec_globals: dict) -> list[dict]:
                     ptype = "boolean"
             params[pname] = {"type": ptype, "description": f"The {pname} parameter"}
             if param.default is inspect.Parameter.empty:
+                log.warning("Parameter %s is required but has no default value", pname)
                 required.append(pname)
 
         tools.append({
@@ -231,6 +232,37 @@ def _extract_tool_schemas(exec_globals: dict) -> list[dict]:
             },
         })
     return tools
+
+
+def _full_env_snapshot(env_instance: Any) -> dict:
+    """Capture full environment state including dynamically-added attributes.
+
+    model_dump() only captures declared Pydantic fields. Attributes added via
+    object.__setattr__ (e.g., outbox from the send_message refinement) are
+    invisible to model_dump(). This function captures both.
+    """
+    try:
+        state = env_instance.model_dump()
+    except Exception:
+        state = {}
+    # Pick up any extra attrs set dynamically (e.g. env.outbox = [...])
+    for key, val in vars(env_instance).items():
+        if key.startswith("_") or key in state:
+            continue
+        try:
+            json.dumps(val, default=str)  # verify serialisable
+            if hasattr(val, "model_dump"):
+                state[key] = val.model_dump()
+            elif isinstance(val, list):
+                state[key] = [
+                    item.model_dump() if hasattr(item, "model_dump") else item
+                    for item in val
+                ]
+            else:
+                state[key] = val
+        except Exception:
+            pass
+    return state
 
 
 _BUILTIN_TYPES: dict[str, type] = {"int": int, "float": float, "str": str, "bool": bool}
@@ -370,7 +402,7 @@ def _run_agent_loop(
                 messages, tc, json.dumps(result, default=str)
             )
 
-    snapshot = json.dumps(env_instance.model_dump(), default=str)
+    snapshot = json.dumps(_full_env_snapshot(env_instance), default=str)
     accessed = _extract_accessed_records(tool_calls_recorded)
 
     return DryRunTrace(
