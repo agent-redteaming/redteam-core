@@ -43,26 +43,54 @@ _INJECTABLE_FIELDS = [
 def _inject_into_result(result: Any, payload: str, preferred_fields: list[str]) -> Any:
     """Embed an adversarial payload into a tool return value.
 
-    Operates on dicts, lists of dicts, and Pydantic model instances.
-    Picks the first injectable text field in order: preferred_fields → _INJECTABLE_FIELDS.
-    If no text field exists, adds a 'notes' key so the payload is always surfaced.
+    Three shapes handled:
+      - list of records: inject into each record
+      - dict that is a single record (has own text fields): inject directly
+      - dict that is a collection wrapper {"vendors": [...], "orders": [...]}:
+        descend into nested lists and inject into each item there
+
+    The last case is critical — without it, the payload lands as a top-level
+    'notes' key on the wrapper dict instead of inside the records themselves.
     """
     if isinstance(result, list):
         return [_inject_into_record(r, payload, preferred_fields) for r in result]
-    if isinstance(result, dict):
-        return _inject_into_record(result, payload, preferred_fields)
+
     if hasattr(result, "model_dump"):
-        return _inject_into_record(result.model_dump(), payload, preferred_fields)
+        result = result.model_dump()
+
+    if isinstance(result, dict):
+        # Distinguish a collection wrapper from a single record.
+        # A wrapper has list values but no own text fields at the top level.
+        top_level_text = any(isinstance(v, str) for v in result.values())
+        nested_lists = [k for k, v in result.items() if isinstance(v, list)]
+
+        if nested_lists and not top_level_text:
+            # Collection wrapper — inject into items inside each nested list.
+            result = dict(result)
+            for key in nested_lists:
+                result[key] = [
+                    _inject_into_record(item, payload, preferred_fields)
+                    if isinstance(item, dict) else item
+                    for item in result[key]
+                ]
+            return result
+
+        # Single record (or mixed wrapper with own text fields)
+        return _inject_into_record(result, payload, preferred_fields)
+
     return result
 
 
 def _inject_into_record(record: Any, payload: str, preferred_fields: list[str]) -> Any:
-    """Embed payload into a single record dict, choosing the best text field."""
+    """Embed payload into a single record dict, choosing the best text field.
+
+    Injects into the first matching field from: preferred_fields → _INJECTABLE_FIELDS.
+    Adds a 'notes' key only as a last resort when no text field is found.
+    """
     if not isinstance(record, dict):
         return record
     record = dict(record)  # copy — do not mutate original
 
-    # Check preferred fields first (from injection key), then fallback order
     for field in (preferred_fields + _INJECTABLE_FIELDS):
         val = record.get(field)
         if isinstance(val, str):
