@@ -207,6 +207,9 @@ def _extract_tool_schemas(exec_globals: dict) -> list[dict]:
         for pname, param in sig.parameters.items():
             if pname == "env":
                 continue
+            # Skip *args and **kwargs — they don't translate to OpenAI tool params
+            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
             ptype = "string"
             ann = param.annotation
             if ann != inspect.Parameter.empty:
@@ -331,16 +334,49 @@ def _call_tool(name: str, arguments: dict, env_instance: Any, exec_globals: dict
 
 
 def _extract_accessed_records(tool_calls: list[ToolCall]) -> list[str]:
-    """Extract IDs of records the agent accessed (for observe-then-inject)."""
+    """Extract IDs of records the agent accessed (for observe-then-inject).
+
+    Handles both exact 'id' field and domain-specific ID names (vendor_id,
+    order_id, customer_id, etc.) and responses nested under a collection key.
+    """
     ids = []
+
+    def _find_id(obj: Any) -> str | None:
+        """Return the first ID-like value from a dict."""
+        if not isinstance(obj, dict):
+            return None
+        # Prefer exact 'id', then any '*_id' field
+        if "id" in obj:
+            return str(obj["id"])
+        for key, val in obj.items():
+            if key.endswith("_id") and isinstance(val, (str, int)):
+                return str(val)
+        return None
+
     for tc in tool_calls:
         response = tc.response
-        if isinstance(response, dict) and "id" in response:
-            ids.append(str(response["id"]))
-        elif isinstance(response, list):
+        if response is None:
+            continue
+        # Direct list of records
+        if isinstance(response, list):
             for item in response:
-                if isinstance(item, dict) and "id" in item:
-                    ids.append(str(item["id"]))
+                rid = _find_id(item)
+                if rid:
+                    ids.append(rid)
+        elif isinstance(response, dict):
+            # Direct record
+            rid = _find_id(response)
+            if rid:
+                ids.append(rid)
+            else:
+                # Nested collection: {"orders": [...], "vendors": [...]}
+                for val in response.values():
+                    if isinstance(val, list):
+                        for item in val:
+                            rid = _find_id(item)
+                            if rid:
+                                ids.append(rid)
+
     return list(dict.fromkeys(ids))  # deduplicate preserving order
 
 

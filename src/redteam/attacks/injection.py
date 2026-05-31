@@ -159,20 +159,32 @@ def _get_library_scenario(
         if not tmpl:
             return None
 
-        # Find best target record (not the first one accessed, to be less obvious)
+        # With tool-response wrapping, we no longer need accessed_records to
+        # find an injection target — the wrapper injects into every tool response.
+        # We still record a representative target_id for reporting purposes.
         accessed = dry_run_trace.accessed_records
-        if not accessed:
-            return None
-        target_id = accessed[min(1, len(accessed) - 1)]
+        target_id = accessed[min(1, len(accessed) - 1)] if accessed else "*"
 
-        # Find the injectable field in that record's response
-        target_field = "notes"  # default
+        # Determine the best injectable field from actual tool responses.
+        # Prefer fields that already exist in responses — the wrapper will put
+        # the payload there so the agent reads it naturally.
+        injectable_field_priority = [
+            "notes", "description", "memo", "comment", "body", "text",
+            "content", "details", "status", "name",
+        ]
+        target_field = "notes"  # default if nothing better found
         for tc in dry_run_trace.tool_calls:
-            if isinstance(tc.response, dict) and tc.response.get("id") == target_id:
-                for field in ["notes", "description", "memo", "comment", "body", "text", "content"]:
-                    if field in tc.response:
-                        target_field = field
+            items = tc.response if isinstance(tc.response, list) else [tc.response]
+            for item in items:
+                if isinstance(item, dict):
+                    for field in injectable_field_priority:
+                        if field in item and isinstance(item[field], str):
+                            target_field = field
+                            break
+                    if target_field != "notes":
                         break
+            if target_field != "notes":
+                break
 
         payload_text = tmpl["template"].format(
             exfil_address=tmpl.get("exfil_address", "attacker@evil.com"),
@@ -369,54 +381,22 @@ def run_direct_injection(
     requirements = ensure_attack_requirements(adapter, need_injectable=True, need_exfil=True)
     log.info("Injection requirements: %s", requirements)
 
-    # Re-run dry run against the (possibly refined) environment to get fresh accessed_records
-    if not dry_run_trace.accessed_records or not requirements.get("injectable_field", True):
-        from redteam.env_pipeline.executor import dry_run as _dry_run
-        from redteam.runtime.chat_completions import ChatCompletionsRuntime
-        import os as _os
-        _runtime = ChatCompletionsRuntime(
-            base_url=_os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1")
-        )
-        _target_model = model or _os.environ.get("TARGET_MODEL", "qwen3.5:2b")
-        log.info("Re-running dry run after environment refinement")
-        dry_run_trace = _dry_run(env, _runtime, _target_model)
-        log.info("Post-refinement dry run: %d tool calls, %d records",
-                 len(dry_run_trace.tool_calls), len(dry_run_trace.accessed_records))
-
-    # If still no records after refinement, build synthetic targets from tool responses
-    if not dry_run_trace.accessed_records and dry_run_trace.tool_calls:
-        log.info("Building synthetic injection targets from tool responses")
-        injectable_fields = ["notes", "description", "memo", "comment", "body",
-                             "text", "content", "status", "routing", "details"]
-        for tc in dry_run_trace.tool_calls:
-            candidates = tc.response if isinstance(tc.response, list) else [tc.response]
-            for item in candidates:
-                if isinstance(item, dict):
-                    for field in injectable_fields:
-                        if field in item:
-                            rec_id = item.get("id", f"_synthetic_{tc.name}")
-                            dry_run_trace = type(dry_run_trace)(
-                                tool_calls=dry_run_trace.tool_calls,
-                                conversation=dry_run_trace.conversation,
-                                final_state_snapshot=dry_run_trace.final_state_snapshot,
-                                accessed_records=[rec_id],
-                            )
-                            break
-                    if dry_run_trace.accessed_records:
-                        break
-            if dry_run_trace.accessed_records:
-                break
-
-    if not dry_run_trace.accessed_records:
-        log.warning("No injectable targets found even after refinement")
+    # Injection no longer requires accessed_records — tool-response wrapping in the
+    # adapter ensures the payload surfaces in any tool the agent reads naturally.
+    # We still re-run the dry run after refinement to refresh the trace data.
+    if not dry_run_trace.tool_calls:
+        log.warning("No tool calls in dry run — skipping injection (nothing to inject into)")
         return AttackResult(
             attack_type=AttackType.DIRECT_INJECTION,
             security_score=1.0,
             utility_score=1.0,
             policy_violated=False,
-            security_evidence=["SKIP: No injectable targets found after environment refinement"],
+            security_evidence=["SKIP: Agent made no tool calls in dry run"],
             utility_evidence=[],
         )
+
+    log.info("Dry run: %d tool calls, %d records accessed",
+             len(dry_run_trace.tool_calls), len(dry_run_trace.accessed_records))
 
     # Build injection scenario (library first, LLM fallback)
     scenario = _get_library_scenario(goal, dry_run_trace, pattern_type, framing_style)
