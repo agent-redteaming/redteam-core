@@ -108,10 +108,12 @@ def run_per_goal(
         goal.id, model_config.model,
     )
 
-    # Stage 1: Generate environment
+    # Stage 1: Generate environment — pass policies so the generator creates
+    # seed data that exercises policy boundaries and the right tools for the attack
     log.info("  Stage 1: Generating environment...")
     t0 = time.time()
-    env = generate_environment(goal, model=attacker_model, base_url=attacker_base_url)
+    env = generate_environment(goal, model=attacker_model, base_url=attacker_base_url,
+                               policies=policies or [])
     log.info("  Environment generated in %.1fs (tools: %s)", time.time() - t0,
              env.expected_tool_sequence)
 
