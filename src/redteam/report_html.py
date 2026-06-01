@@ -280,16 +280,32 @@ const REPORT = {report_json};
 // ============================================================
 // State
 // ============================================================
-let selectedGoalIdx = null;
-let selectedStep = 'overview';
+let selectedView = 'overview';   // 'overview', 'rc:RC-001', 'goal:0'
+let selectedStep = 'env';        // 'env', 'dryrun', 'attacks' (for goal view)
+let selectedAttackTab = 0;       // which attack tab within the attacks step
+let expandedRCs = {{}};           // rcId -> true/false (expanded in sidebar)
+
+// ============================================================
+// Data helpers
+// ============================================================
+function goalsByRiskCard() {{
+  const groups = {{}};
+  REPORT.goals.forEach((g, i) => {{
+    if (!groups[g.risk_card_id]) groups[g.risk_card_id] = [];
+    groups[g.risk_card_id].push({{goal: g, idx: i}});
+  }});
+  return groups;
+}}
 
 // ============================================================
 // Init
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {{
   renderHeaderMeta();
+  // Pre-expand all RC sections
+  (REPORT.risk_cards || []).forEach(rc => {{ expandedRCs[rc.id] = true; }});
   renderSidebar();
-  selectOverview();
+  navigate('overview');
 }});
 
 // ============================================================
@@ -309,114 +325,189 @@ function renderHeaderMeta() {{
 }}
 
 // ============================================================
-// Sidebar
+// Sidebar — hierarchical: Overview + RC sections with goal children
 // ============================================================
 function renderSidebar() {{
   const sub = document.getElementById('sidebar-sub');
   const s = REPORT.summary;
-  sub.textContent = `${{s.goals_tested}} goal${{s.goals_tested !== 1 ? 's' : ''}}`;
+  sub.textContent = `${{s.goals_tested}} goal${{s.goals_tested !== 1 ? 's' : ''}} · ${{(REPORT.risk_cards||[]).length}} risk card${{(REPORT.risk_cards||[]).length !== 1 ? 's' : ''}}`;
 
   const list = document.getElementById('sidebar-list');
   list.innerHTML = '';
 
   // Overview item
-  const ovItem = el('div', 'sidebar-item sidebar-item-overview active', `
+  const isOverview = selectedView === 'overview';
+  const ovItem = el('div', 'sidebar-item sidebar-item-overview' + (isOverview ? ' active' : ''), `
     <div class="sidebar-icon">&#9670;</div>
     <div class="sidebar-item-text">
       <div class="sidebar-item-title">Overview</div>
     </div>
   `);
-  ovItem.dataset.idx = 'overview';
-  ovItem.addEventListener('click', () => selectOverview());
+  ovItem.addEventListener('click', () => navigate('overview'));
   list.appendChild(ovItem);
 
-  // Goal items
-  REPORT.goals.forEach((goal, i) => {{
-    const short = goal.objective.length > 48 ? goal.objective.slice(0, 48) + '…' : goal.objective;
-    const item = el('div', 'sidebar-item' + (goal.any_violation ? ' sidebar-item-violated' : ''), `
-      <div class="sidebar-item-text">
-        <div class="sidebar-item-id">${{goal.id}} <span class="tag ${{severityTag(goal.severity)}}">${{goal.severity}}</span></div>
-        <div class="sidebar-item-title">${{esc(short)}}</div>
-        <div class="sidebar-item-badges">
-          ${{goal.any_violation
-            ? '<span class="badge badge-fail" style="font-size:10px;padding:2px 6px">VIOLATED</span>'
-            : '<span class="badge badge-pass" style="font-size:10px;padding:2px 6px">passed</span>'
-          }}
-          <span class="tag tag-asi">${{goal.asi_category}}</span>
+  // Divider
+  const div = el('div', 'sidebar-divider', '');
+  list.appendChild(div);
+
+  // Group goals by risk card
+  const groups = goalsByRiskCard();
+  const rcOrder = (REPORT.risk_cards || []).map(rc => rc.id);
+
+  rcOrder.forEach(rcId => {{
+    const rc = (REPORT.risk_cards || []).find(r => r.id === rcId);
+    if (!rc) return;
+    const goalEntries = groups[rcId] || [];
+    const rcViolated = goalEntries.some(e => e.goal.any_violation);
+    const isExpanded = !!expandedRCs[rcId];
+    const isRCActive = selectedView === 'rc:' + rcId;
+
+    // RC header row
+    const rcSeverity = rc.risk_consequence ? rc.risk_consequence.severity : '';
+    const rcTitle = rc.id;
+    const rcHeader = el('div', 'sidebar-rc-header' + (isRCActive ? ' active' : '') + (rcViolated ? ' rc-violated' : ''), `
+      <div class="rc-header-left">
+        <span class="rc-collapse-icon">${{isExpanded ? '&#9660;' : '&#9654;'}}</span>
+        <span class="rc-icon">&#128203;</span>
+        <div class="rc-header-text">
+          <div class="rc-header-id">${{esc(rcTitle)}}</div>
+          ${{rcSeverity ? `<span class="tag ${{severityTag(rcSeverity)}}" style="font-size:10px">${{rcSeverity}}</span>` : ''}}
+          ${{goalEntries.length > 0 && goalEntries.some(e => e.goal.asi_category) ? `<span class="tag tag-asi" style="font-size:10px;margin-left:2px">${{esc(goalEntries[0].goal.asi_category)}}</span>` : ''}}
         </div>
       </div>
+      <span class="rc-viol-indicator" style="color:${{rcViolated ? 'var(--red)' : 'var(--green)'}};">${{rcViolated ? '💀' : '✓'}}</span>
     `);
-    item.dataset.idx = String(i);
-    item.addEventListener('click', () => selectGoal(i));
-    list.appendChild(item);
+    rcHeader.addEventListener('click', (e) => {{
+      // Toggle expand/collapse
+      expandedRCs[rcId] = !expandedRCs[rcId];
+      navigate('rc:' + rcId);
+    }});
+    list.appendChild(rcHeader);
+
+    // Goal children (shown when expanded)
+    if (isExpanded) {{
+      goalEntries.forEach(entry => {{
+        const g = entry.goal;
+        const gi = entry.idx;
+        const isGoalActive = selectedView === 'goal:' + gi;
+        const short = g.objective.length > 44 ? g.objective.slice(0, 44) + '…' : g.objective;
+        const treeChar = gi === goalEntries[goalEntries.length - 1].idx ? '└──' : '├──';
+        const icon = g.any_violation ? '💀' : '✓';
+        const goalItem = el('div', 'sidebar-goal-item' + (isGoalActive ? ' active' : '') + (g.any_violation ? ' sidebar-item-violated' : ''), `
+          <div class="goal-tree-line">${{treeChar}}</div>
+          <div class="goal-item-icon" style="color:${{g.any_violation ? 'var(--red)' : 'var(--green)'}};">${{icon}}</div>
+          <div class="goal-item-text">
+            <div class="goal-item-id">${{esc(g.id)}}</div>
+            <div class="goal-item-title">${{esc(short)}}</div>
+          </div>
+        `);
+        goalItem.addEventListener('click', (e) => {{
+          e.stopPropagation();
+          navigate('goal:' + gi);
+        }});
+        list.appendChild(goalItem);
+      }});
+    }}
   }});
 }}
 
 // ============================================================
 // Navigation
 // ============================================================
-function selectOverview() {{
-  selectedGoalIdx = null;
-  selectedStep = 'overview';
-  document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
-  document.querySelector('.sidebar-item-overview').classList.add('active');
-  renderPipeline([]);
-  renderContent();
-}}
+function navigate(view) {{
+  selectedView = view;
 
-function selectGoal(idx) {{
-  selectedGoalIdx = idx;
-  selectedStep = 'attacks';
-  document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.sidebar-item')[idx + 1].classList.add('active');
-  renderPipeline(buildSteps(REPORT.goals[idx]));
+  // If navigating to a goal, ensure its parent RC is expanded
+  if (view.startsWith('goal:')) {{
+    const gi = parseInt(view.split(':')[1]);
+    const goal = REPORT.goals[gi];
+    if (goal) expandedRCs[goal.risk_card_id] = true;
+    selectedStep = 'env';
+    selectedAttackTab = 0;
+  }}
+  // If navigating to an RC, ensure it's expanded
+  if (view.startsWith('rc:')) {{
+    const rcId = view.slice(3);
+    expandedRCs[rcId] = true;
+  }}
+
+  renderSidebar();
+  renderPipelineForView();
   renderContent();
 }}
 
 function selectStep(stepId) {{
   selectedStep = stepId;
+  if (stepId === 'attacks') selectedAttackTab = 0;
   document.querySelectorAll('.pipeline-step').forEach(s => s.classList.remove('active'));
   const active = document.querySelector(`.pipeline-step[data-step="${{stepId}}"]`);
   if (active) active.classList.add('active');
   renderContent();
 }}
 
+function selectAttackTab(idx) {{
+  selectedAttackTab = idx;
+  // Re-render only the attacks content area
+  const area = document.getElementById('content-area');
+  if (selectedView.startsWith('goal:')) {{
+    const gi = parseInt(selectedView.split(':')[1]);
+    const goal = REPORT.goals[gi];
+    area.innerHTML = renderGoalStepContent(goal);
+  }}
+}}
+
 // ============================================================
 // Pipeline strip
 // ============================================================
-function buildSteps(goal) {{
+function buildGoalSteps(goal) {{
   const anyViolated = (goal.attacks || []).some(a => a.violated);
   const attackBadge = anyViolated ? ' 💀' : ' ✓';
   return [
-    {{ id: 'risk',    label: 'Risk Card',   num: '1' }},
-    {{ id: 'env',     label: 'Environment', num: '2' }},
-    {{ id: 'dryrun',  label: 'Dry Run',     num: '3' }},
-    {{ id: 'attacks', label: 'Attacks' + attackBadge, num: '4' }},
-    {{ id: 'summary', label: 'Summary',     num: '★' }},
+    {{ id: 'env',     label: 'Environment', num: '1' }},
+    {{ id: 'dryrun',  label: 'Dry Run',     num: '2' }},
+    {{ id: 'attacks', label: 'Attacks' + attackBadge, num: '3' }},
   ];
 }}
 
-function renderPipeline(steps) {{
+function renderPipelineForView() {{
   const strip = document.getElementById('pipeline-strip');
-  if (steps.length === 0) {{
+
+  if (selectedView === 'overview') {{
     strip.innerHTML = `
-      <div class="pipeline-step active" data-step="overview" onclick="selectOverview()">
+      <div class="pipeline-step active" data-step="overview" onclick="navigate('overview')">
         <div class="step-num" style="background:var(--text)">&#9670;</div>
         <div class="step-label">Overview</div>
       </div>`;
     return;
   }}
 
-  let html = '';
-  steps.forEach((step, i) => {{
-    const isActive = step.id === selectedStep;
-    html += `<div class="pipeline-step${{isActive ? ' active' : ''}}" data-step="${{step.id}}" onclick="selectStep('${{step.id}}')">
-      <div class="step-num">${{step.num}}</div>
-      <div class="step-label">${{esc(step.label)}}</div>
-    </div>`;
-    if (i < steps.length - 1) html += `<div class="pipeline-arrow">&rarr;</div>`;
-  }});
-  strip.innerHTML = html;
+  if (selectedView.startsWith('rc:')) {{
+    const rcId = selectedView.slice(3);
+    strip.innerHTML = `
+      <div class="pipeline-step active" data-step="rc">
+        <div class="step-num" style="background:var(--accent)">&#128203;</div>
+        <div class="step-label">Risk Card: ${{esc(rcId)}}</div>
+      </div>`;
+    return;
+  }}
+
+  if (selectedView.startsWith('goal:')) {{
+    const gi = parseInt(selectedView.split(':')[1]);
+    const goal = REPORT.goals[gi];
+    const steps = buildGoalSteps(goal);
+    let html = `
+      <div style="font-size:12px;color:var(--text-dim);margin-right:12px;white-space:nowrap;cursor:pointer" onclick="navigate('rc:${{esc(goal.risk_card_id)}}')">&larr; ${{esc(goal.risk_card_id)}}</div>`;
+    steps.forEach((step, i) => {{
+      const isActive = step.id === selectedStep;
+      html += `<div class="pipeline-step${{isActive ? ' active' : ''}}" data-step="${{step.id}}" onclick="selectStep('${{step.id}}')">
+        <div class="step-num">${{step.num}}</div>
+        <div class="step-label">${{esc(step.label)}}</div>
+      </div>`;
+      if (i < steps.length - 1) html += `<div class="pipeline-arrow">&rarr;</div>`;
+    }});
+    strip.innerHTML = html;
+    return;
+  }}
 }}
 
 // ============================================================
@@ -424,26 +515,28 @@ function renderPipeline(steps) {{
 // ============================================================
 function renderContent() {{
   const area = document.getElementById('content-area');
-  if (selectedGoalIdx === null) {{
+
+  if (selectedView === 'overview') {{
     area.innerHTML = renderOverview();
     return;
   }}
-  const goal = REPORT.goals[selectedGoalIdx];
-  if (selectedStep === 'risk') {{
-    area.innerHTML = renderRiskCard(goal);
-  }} else if (selectedStep === 'env') {{
-    area.innerHTML = renderEnvironment(goal);
-  }} else if (selectedStep === 'dryrun') {{
-    area.innerHTML = renderDryRun(goal);
-  }} else if (selectedStep === 'attacks') {{
-    area.innerHTML = renderAllAttacks(goal);
-  }} else if (selectedStep === 'summary') {{
-    area.innerHTML = renderSummary();
+
+  if (selectedView.startsWith('rc:')) {{
+    const rcId = selectedView.slice(3);
+    area.innerHTML = renderRiskCardPage(rcId);
+    return;
+  }}
+
+  if (selectedView.startsWith('goal:')) {{
+    const gi = parseInt(selectedView.split(':')[1]);
+    const goal = REPORT.goals[gi];
+    area.innerHTML = renderGoalStepContent(goal);
+    return;
   }}
 }}
 
 // ============================================================
-// Overview
+// Overview — usecase + policies + stats + risk card tiles grid
 // ============================================================
 function renderOverview() {{
   const s = REPORT.summary;
@@ -470,25 +563,31 @@ function renderOverview() {{
   // Policies list
   const policiesHtml = (meta.policies || []).map(p => `<li>${{esc(p)}}</li>`).join('');
 
-  // Goal cards grid
-  const goalCards = REPORT.goals.map((goal, i) => {{
-    const violBadge = goal.any_violation
-      ? '<span class="badge badge-fail" style="font-size:11px">VIOLATED</span>'
-      : '<span class="badge badge-pass" style="font-size:11px">passed</span>';
-    return `<div class="goal-card" onclick="selectGoal(${{i}})">
-      <div class="goal-card-header">
-        <span class="tag tag-asi">${{goal.asi_category}}</span>
-        <span class="tag ${{severityTag(goal.severity)}}">${{goal.severity}}</span>
-        ${{violBadge}}
+  // Risk card tiles grid (click → navigate to rc page)
+  const groups = goalsByRiskCard();
+  const rcCards = (REPORT.risk_cards || []).map(rc => {{
+    const goalEntries = groups[rc.id] || [];
+    const rcViolated = goalEntries.some(e => e.goal.any_violation);
+    const rcSeverity = rc.risk_consequence ? rc.risk_consequence.severity : '';
+    const goalTags = goalEntries.slice(0, 3).map(e =>
+      `<span class="tag ${{e.goal.any_violation ? 'tag-critical' : 'tag-low'}}" style="font-size:10px">${{esc(e.goal.id)}}</span>`
+    ).join(' ');
+    const moreGoals = goalEntries.length > 3 ? `<span class="text-dim" style="font-size:10px">+${{goalEntries.length - 3}} more</span>` : '';
+    return `<div class="rc-card${{rcViolated ? ' rc-card-violated' : ''}}" onclick="navigate('rc:${{esc(rc.id)}}')">
+      <div class="rc-card-header">
+        <span class="rc-card-id">&#128203; ${{esc(rc.id)}}</span>
+        <span class="tag ${{severityTag(rcSeverity)}}" style="font-size:10px">${{rcSeverity}}</span>
       </div>
-      <div class="goal-card-id">${{esc(goal.id)}}</div>
-      <div class="goal-card-obj">${{esc(goal.objective.slice(0, 100))}}</div>
-      <div class="goal-card-attacks">${{(goal.attacks || []).map(a => `<span class="tag tag-attack">${{attackLabel(a.type)}}</span>`).join(' ')}}</div>
+      <div class="rc-card-desc">${{esc((rc.risk_source && rc.risk_source.description || '').slice(0, 90))}}${{(rc.risk_source && rc.risk_source.description || '').length > 90 ? '…' : ''}}</div>
+      <div class="rc-card-footer">
+        <div>${{goalTags}} ${{moreGoals}}</div>
+        <span style="font-size:18px">${{rcViolated ? '💀' : '✓'}}</span>
+      </div>
     </div>`;
   }}).join('');
 
   return `
-    <div style="max-width:900px">
+    <div style="max-width:960px">
       <h2 style="font-size:26px;font-weight:700;margin-bottom:6px">Layer 1 Red-Team Report</h2>
       <p style="color:var(--text-dim);margin-bottom:28px;font-size:15px">${{esc(meta.usecase)}}</p>
 
@@ -519,22 +618,23 @@ function renderOverview() {{
         <div class="card-body">${{owaspBars}}</div>
       </div>` : ''}}
 
+      ${{rcCards ? `
       <div class="card" style="margin-bottom:20px">
-        <div class="card-header"><h3>Goals</h3><span class="text-dim" style="font-size:13px">Click a card to explore</span></div>
+        <div class="card-header"><h3>Risk Cards</h3><span class="text-dim" style="font-size:13px">Click a card to explore</span></div>
         <div class="card-body">
-          <div class="goal-cards-grid">${{goalCards}}</div>
+          <div class="rc-cards-grid">${{rcCards}}</div>
         </div>
-      </div>
+      </div>` : ''}}
     </div>`;
 }}
 
 // ============================================================
-// Risk Card
+// Risk Card Page — full RC details + goal tiles below
 // ============================================================
-function renderRiskCard(goal) {{
-  const rc = (REPORT.risk_cards || []).find(r => r.id === goal.risk_card_id);
+function renderRiskCardPage(rcId) {{
+  const rc = (REPORT.risk_cards || []).find(r => r.id === rcId);
   if (!rc) {{
-    return `<div class="card"><div class="card-body"><p class="text-dim">No risk card data available for ${{esc(goal.risk_card_id)}}.</p></div></div>`;
+    return `<div class="card"><div class="card-body"><p class="text-dim">No risk card data for ${{esc(rcId)}}.</p></div></div>`;
   }}
 
   const controlsHtml = (rc.risk_controls || []).map(c => `
@@ -546,58 +646,93 @@ function renderRiskCard(goal) {{
   const polRefs = (rc.policy_references || []).map(p => `<span class="tag" style="background:#f0f2f7;color:var(--text-dim);border:1px solid var(--border);margin-right:4px">${{esc(p)}}</span>`).join('');
   const fwRefs = (rc.framework_references || []).map(p => `<span class="tag" style="background:#f0f2f7;color:var(--text-dim);border:1px solid var(--border);margin-right:4px">${{esc(p)}}</span>`).join('');
 
-  return `
-    <h2 style="margin-bottom:20px">Step 1: Risk Card</h2>
-
-    <div class="card">
-      <div class="card-header">
-        <h3>RiskCard: ${{esc(rc.id)}}</h3>
-        <span class="tag ${{severityTag(rc.risk_consequence.severity)}}">${{rc.risk_consequence.severity}}</span>
+  // Goal tiles for this RC
+  const groups = goalsByRiskCard();
+  const goalEntries = groups[rcId] || [];
+  const goalTiles = goalEntries.map(entry => {{
+    const g = entry.goal;
+    const gi = entry.idx;
+    const violBadge = g.any_violation
+      ? '<span class="badge badge-fail" style="font-size:11px">VIOLATED</span>'
+      : '<span class="badge badge-pass" style="font-size:11px">passed</span>';
+    return `<div class="goal-card" onclick="navigate('goal:${{gi}}')">
+      <div class="goal-card-header">
+        <span class="tag tag-asi">${{g.asi_category}}</span>
+        <span class="tag ${{severityTag(g.severity)}}">${{g.severity}}</span>
+        ${{violBadge}}
       </div>
-      <div class="card-body">
-        <div class="kv-grid">
-          <div class="kv-label">Risk Source</div>
-          <div>${{esc(rc.risk_source.description)}}</div>
-          <div class="kv-label">Likelihood</div>
-          <div><span class="tag ${{severityTag(rc.risk_source.likelihood)}}">${{rc.risk_source.likelihood}}</span></div>
-          <div class="kv-label">Consequence</div>
-          <div>${{esc(rc.risk_consequence.description)}}</div>
-          <div class="kv-label">Severity</div>
-          <div><span class="tag ${{severityTag(rc.risk_consequence.severity)}}">${{rc.risk_consequence.severity}}</span></div>
-          ${{rc.risk_impact ? `
-          <div class="kv-label">Impact</div>
-          <div>${{esc(rc.risk_impact.description)}}</div>
-          <div class="kv-label">Stakeholders</div>
-          <div>${{(rc.risk_impact.affected_stakeholders || []).join(', ')}}</div>
-          <div class="kv-label">Harm Type</div>
-          <div>${{esc(rc.risk_impact.harm_type || '')}}</div>
-          ` : ''}}
-          <div class="kv-label">Controls</div>
-          <div>${{controlsHtml || '<span class="text-dim">None listed</span>'}}</div>
-          ${{polRefs ? `<div class="kv-label">Policy Refs</div><div>${{polRefs}}</div>` : ''}}
-          ${{fwRefs ? `<div class="kv-label">Framework Refs</div><div>${{fwRefs}}</div>` : ''}}
-          ${{rc.materialization_conditions ? `<div class="kv-label">Materialization</div><div>${{esc(rc.materialization_conditions)}}</div>` : ''}}
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header"><h3>Attacker Goal: ${{esc(goal.id)}}</h3></div>
-      <div class="card-body">
-        <div class="kv-grid">
-          <div class="kv-label">Objective</div>
-          <div>${{esc(goal.objective)}}</div>
-          <div class="kv-label">Success Criteria</div>
-          <div>${{esc(goal.success_criteria)}}</div>
-          <div class="kv-label">ASI Category</div>
-          <div><span class="tag tag-asi">${{goal.asi_category}}</span></div>
-          <div class="kv-label">Severity</div>
-          <div><span class="tag ${{severityTag(goal.severity)}}">${{goal.severity}}</span></div>
-          <div class="kv-label">Model</div>
-          <div><code>${{esc(goal.model_id)}}</code></div>
-        </div>
-      </div>
+      <div class="goal-card-id">${{esc(g.id)}}</div>
+      <div class="goal-card-obj">${{esc(g.objective.slice(0, 110))}}</div>
+      <div class="goal-card-attacks">${{(g.attacks || []).map(a => `<span class="tag tag-attack">${{attackLabel(a.type)}}</span>`).join(' ')}}</div>
     </div>`;
+  }}).join('');
+
+  return `
+    <div style="max-width:900px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+        <span style="font-size:22px">&#128203;</span>
+        <h2 style="font-size:22px;font-weight:700">${{esc(rc.id)}}</h2>
+        ${{rc.risk_consequence ? `<span class="tag ${{severityTag(rc.risk_consequence.severity)}}">${{rc.risk_consequence.severity}}</span>` : ''}}
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>Risk Details</h3></div>
+        <div class="card-body">
+          <div class="kv-grid">
+            <div class="kv-label">Risk Source</div>
+            <div>${{esc(rc.risk_source.description)}}</div>
+            <div class="kv-label">Likelihood</div>
+            <div><span class="tag ${{severityTag(rc.risk_source.likelihood)}}">${{rc.risk_source.likelihood}}</span></div>
+            <div class="kv-label">Consequence</div>
+            <div>${{esc(rc.risk_consequence.description)}}</div>
+            <div class="kv-label">Severity</div>
+            <div><span class="tag ${{severityTag(rc.risk_consequence.severity)}}">${{rc.risk_consequence.severity}}</span></div>
+            ${{rc.risk_impact ? `
+            <div class="kv-label">Impact</div>
+            <div>${{esc(rc.risk_impact.description)}}</div>
+            <div class="kv-label">Stakeholders</div>
+            <div>${{(rc.risk_impact.affected_stakeholders || []).join(', ')}}</div>
+            <div class="kv-label">Harm Type</div>
+            <div>${{esc(rc.risk_impact.harm_type || '')}}</div>
+            ` : ''}}
+            <div class="kv-label">Controls</div>
+            <div>${{controlsHtml || '<span class="text-dim">None listed</span>'}}</div>
+            ${{polRefs ? `<div class="kv-label">Policy Refs</div><div>${{polRefs}}</div>` : ''}}
+            ${{fwRefs ? `<div class="kv-label">Framework Refs</div><div>${{fwRefs}}</div>` : ''}}
+            ${{rc.materialization_conditions ? `<div class="kv-label">Materialization</div><div>${{esc(rc.materialization_conditions)}}</div>` : ''}}
+          </div>
+        </div>
+      </div>
+
+      ${{goalTiles ? `
+      <div class="card">
+        <div class="card-header"><h3>Goals</h3><span class="text-dim" style="font-size:13px">Click a goal to explore its pipeline</span></div>
+        <div class="card-body">
+          <div class="goal-cards-grid">${{goalTiles}}</div>
+        </div>
+      </div>` : ''}}
+    </div>`;
+}}
+
+// ============================================================
+// Goal page — render the active pipeline step content
+// ============================================================
+function renderGoalStepContent(goal) {{
+  if (selectedStep === 'env') {{
+    return renderEnvironment(goal);
+  }} else if (selectedStep === 'dryrun') {{
+    return renderDryRun(goal);
+  }} else if (selectedStep === 'attacks') {{
+    return renderAttackTabs(goal);
+  }}
+  return '';
+}}
+
+// ============================================================
+// Risk Card (kept for backward compat — called by old code paths)
+// ============================================================
+function renderRiskCard(goal) {{
+  return renderRiskCardPage(goal.risk_card_id);
 }}
 
 // ============================================================
@@ -611,8 +746,6 @@ function renderEnvironment(goal) {{
   ).join('');
 
   return `
-    <h2 style="margin-bottom:20px">Step 2: Environment</h2>
-
     <div class="card">
       <div class="card-header"><h3>User Task Prompt</h3></div>
       <div class="card-body">
@@ -701,7 +834,6 @@ function renderDryRun(goal) {{
   ).join('');
 
   return `
-    <h2 style="margin-bottom:20px">Step 3: Dry Run (Clean Baseline)</h2>
     <p style="color:var(--text-dim);margin-bottom:20px">Agent run against the clean environment. No injections. Establishes baseline behavior.</p>
 
     ${{recsHtml ? `
@@ -725,30 +857,39 @@ function renderDryRun(goal) {{
 }}
 
 // ============================================================
-// All-attacks page — one tile per attack type
+// Attack Tabs — tabbed interface for the attacks step
 // ============================================================
-function renderAllAttacks(goal) {{
+function renderAttackTabs(goal) {{
   const attacks = goal.attacks || [];
   if (attacks.length === 0) {{
-    return `<h2 style="margin-bottom:20px">Attacks</h2><p class="text-dim">No attacks were run for this goal.</p>`;
+    return `<p class="text-dim">No attacks were run for this goal.</p>`;
   }}
 
-  const tilesHtml = attacks.map((atk, i) => renderAttack(goal, atk, i)).join('');
+  // Clamp selectedAttackTab
+  const tabIdx = Math.min(selectedAttackTab, attacks.length - 1);
+
+  // Build tab bar
+  const tabBar = attacks.map((atk, i) => {{
+    const isActive = i === tabIdx;
+    const icon = atk.violated ? '💀' : '✓';
+    return `<div class="attack-tab${{isActive ? ' attack-tab-active' : ''}}" onclick="selectAttackTab(${{i}})">
+      <span style="margin-right:4px">${{icon}}</span>${{esc(attackLabel(atk.type))}}
+    </div>`;
+  }}).join('');
+
+  // Render the active tab content
+  const atk = attacks[tabIdx];
+  const tabContent = renderAttack(goal, atk, tabIdx);
 
   return `
-    <h2 style="margin-bottom:8px">Step 4: Attacks</h2>
-    <p style="color:var(--text-dim);margin-bottom:28px">
-      ${{attacks.length}} attack${{attacks.length !== 1 ? 's' : ''}} run against this goal.
-      ${{attacks.filter(a => a.violated).length}} violation${{attacks.filter(a => a.violated).length !== 1 ? 's' : ''}} found.
-    </p>
-    ${{tilesHtml}}`;
+    <div class="attack-tabs-bar">${{tabBar}}</div>
+    <div class="attack-tabs-content">${{tabContent}}</div>`;
 }}
 
 // ============================================================
-// Single attack tile (used both in all-attacks page and standalone)
+// Single attack tile — rendered inside the active tab
 // ============================================================
 function renderAttack(goal, atk, atkIdx) {{
-  const stepNum = 4 + atkIdx;
   const violBadge = atk.violated
     ? '<span class="badge badge-fail">VIOLATED</span>'
     : '<span class="badge badge-pass">passed</span>';
@@ -1753,4 +1894,113 @@ def _css() -> str:
     color: var(--text-dim);
   }
   .detail-close:hover { background: var(--surface2); }
+
+  /* ===== Sidebar hierarchy ===== */
+  .sidebar-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
+  }
+  .sidebar-rc-header {
+    padding: 9px 12px 9px 10px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    transition: background .1s;
+  }
+  .sidebar-rc-header:hover { background: var(--surface2); }
+  .sidebar-rc-header.active { background: #eef1fb; border-left: 3px solid var(--accent); }
+  .sidebar-rc-header.rc-violated .rc-header-id { color: var(--red); }
+  .rc-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+  }
+  .rc-collapse-icon { font-size: 9px; color: var(--text-dim); flex-shrink: 0; }
+  .rc-icon { font-size: 13px; flex-shrink: 0; }
+  .rc-header-text { min-width: 0; }
+  .rc-header-id {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rc-viol-indicator { font-size: 13px; flex-shrink: 0; }
+
+  .sidebar-goal-item {
+    padding: 7px 10px 7px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    transition: background .1s;
+    background: var(--bg);
+  }
+  .sidebar-goal-item:hover { background: var(--surface2); }
+  .sidebar-goal-item.active { background: #eef1fb; border-left: 3px solid var(--accent); padding-left: 11px; }
+  .sidebar-goal-item.sidebar-item-violated .goal-item-title { color: var(--red); }
+  .goal-tree-line { font-size: 11px; color: var(--text-dim); flex-shrink: 0; font-family: monospace; margin-top: 1px; }
+  .goal-item-icon { font-size: 11px; flex-shrink: 0; margin-top: 1px; }
+  .goal-item-text { min-width: 0; }
+  .goal-item-id { font-size: 10px; color: var(--text-dim); margin-bottom: 1px; }
+  .goal-item-title { font-size: 12px; font-weight: 500; line-height: 1.4; color: var(--text); }
+
+  /* ===== Risk card tiles grid (Overview page) ===== */
+  .rc-cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .rc-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    cursor: pointer;
+    transition: all .15s;
+    background: var(--surface2);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .rc-card:hover { border-color: var(--accent); background: #eef1fb; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  .rc-card-violated { border-color: #fecaca; background: #fef2f2; }
+  .rc-card-violated:hover { border-color: var(--red); background: #fee2e2; }
+  .rc-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .rc-card-id { font-size: 13px; font-weight: 700; color: var(--text); }
+  .rc-card-desc { font-size: 12px; color: var(--text-dim); line-height: 1.5; flex: 1; }
+  .rc-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+
+  /* ===== Attack tabs ===== */
+  .attack-tabs-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 24px;
+    overflow-x: auto;
+    flex-shrink: 0;
+  }
+  .attack-tab {
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    color: var(--text-dim);
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    white-space: nowrap;
+    transition: color .1s, border-color .1s;
+    user-select: none;
+  }
+  .attack-tab:hover { color: var(--text); }
+  .attack-tab.attack-tab-active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
+  .attack-tabs-content { /* no extra padding needed, renderAttack handles its own */ }
 </style>"""
