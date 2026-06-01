@@ -99,6 +99,13 @@ class AttackResult(BaseModel):
     injection_payloads: list[dict] = Field(default_factory=list)
     # Each item: {target_record_id, target_field, payload_text, pattern_type, framing_style}
 
+    # Attack-specific structured metadata for the report UI.
+    # multi_turn:        {"strategy", "turn_prompts", "per_turn_tool_calls"}
+    # poisoned_runtime:  {"poisoned_tool", "directive", "poisoned_docstring"}
+    # minja:             {"phase1_queries", "phase1_stored", "memory_state_after_phase1"}
+    # pair_adversarial:  {"improvement_notes"} (already in security_evidence)
+    attack_metadata: dict = Field(default_factory=dict)
+
     # Raw traces for inspection
     clean_trace: DryRunTrace | None = None   # baseline from dry run
     attack_trace: DryRunTrace | None = None  # what happened under attack

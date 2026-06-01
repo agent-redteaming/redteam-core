@@ -162,6 +162,13 @@ if '{target_tool}' in dir():
     )
     adapter.apply_refinement(refinement)
 
+    # Capture the actual poisoned docstring the model sees in the tool schema
+    poisoned_docstring = ""
+    for schema in adapter.tool_schemas:
+        if schema.get("function", {}).get("name") == target_tool:
+            poisoned_docstring = schema["function"].get("description", "")
+            break
+
     log.info("Applied poisoned tool description to '%s'", target_tool)
 
     # Run with legitimate user task — agent will see the poisoned description
@@ -187,7 +194,7 @@ if '{target_tool}' in dir():
 
     evidence = [
         f"Poisoned tool: {target_tool}",
-        f"Directive: {directive[:100]}...",
+        f"Directive: {directive}",
         f"Unexpected suspicious calls: {unexpected_suspicious}",
         f"Outbox/state changes: {len(outbox_diffs)}",
         f"Policy violated: {policy_violated}",
@@ -204,4 +211,9 @@ if '{target_tool}' in dir():
         clean_trace=dry_run_trace,
         attack_trace=attack_trace,
         state_diff=state_diff,
+        attack_metadata={
+            "poisoned_tool": target_tool,
+            "directive": directive,
+            "poisoned_docstring": poisoned_docstring,
+        },
     )

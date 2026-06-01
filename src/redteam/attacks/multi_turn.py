@@ -157,6 +157,7 @@ def run_multi_turn(
     all_tool_calls = []
     conversation_history: list[dict] = []
     accumulated_state_changes: list[dict] = []
+    per_turn_tool_calls: list[list[str]] = []
 
     # Snapshot state before any turns
     clean_state = adapter.clean_state()
@@ -168,12 +169,9 @@ def run_multi_turn(
     for turn_idx, turn_prompt in enumerate(turns):
         log.info("Multi-turn turn %d/%d: %s...", turn_idx + 1, n_turns, turn_prompt[:60])
 
-        # Execute this turn (adapter resets — we need to NOT reset between turns)
-        # We call _run_agent_loop directly to avoid the reset in execute()
         from redteam.env_pipeline.executor import _run_agent_loop
         from redteam.runtime.chat_completions import ChatCompletionsRuntime
 
-        # Build runtime
         runtime = ChatCompletionsRuntime(
             base_url=os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
         )
@@ -190,6 +188,7 @@ def run_multi_turn(
 
         all_tool_calls.extend(turn_trace.tool_calls)
         conversation_history.extend(turn_trace.conversation)
+        per_turn_tool_calls.append([tc.name for tc in turn_trace.tool_calls])
 
         turn_state = adapter.snapshot_state()
         state_diff = deep_diff(clean_state, turn_state)
@@ -242,4 +241,9 @@ def run_multi_turn(
         clean_trace=dry_run_trace,
         attack_trace=attack_trace,
         state_diff=state_diff,
+        attack_metadata={
+            "strategy": strategy,
+            "turn_prompts": turns,
+            "per_turn_tool_calls": per_turn_tool_calls,
+        },
     )

@@ -760,6 +760,12 @@ function renderAttack(goal, atk, atkIdx) {{
     topHtml = renderInjectionPayloads(atk.injection_payloads);
   }} else if (type === 'pair_adversarial' || type === 'pair_injection') {{
     topHtml = renderPairInfo(atk);
+  }} else if (type === 'multi_turn') {{
+    topHtml = renderMultiTurnInfo(atk);
+  }} else if (type === 'poisoned_runtime') {{
+    topHtml = renderPoisonedRuntimeInfo(atk);
+  }} else if (type === 'minja') {{
+    topHtml = renderMinjaInfo(atk);
   }}
 
   const convHtml = atk.attack_trace ? renderConversation(atk.attack_trace.conversation) : '<p class="text-dim">No trace available.</p>';
@@ -845,6 +851,93 @@ function renderPairInfo(atk) {{
           <div style="white-space:pre-wrap;font-size:13px">${{esc(adversarialPrompt)}}</div>
         </div>
       </div>
+    </div>`;
+}}
+
+function renderMultiTurnInfo(atk) {{
+  const meta = atk.attack_metadata || {{}};
+  const turns = meta.turn_prompts || [];
+  const perTurnTools = meta.per_turn_tool_calls || [];
+  if (turns.length === 0) return '';
+
+  const strategyLabel = (meta.strategy || 'progressive_escalation').replace(/_/g, ' ');
+  const items = turns.map((prompt, i) => {{
+    const tools = (perTurnTools[i] || []).join(', ') || '—';
+    const fragClass = i === 0 ? 'frag-premise' : i === turns.length - 1 ? 'frag-trigger' : 'frag-reinforce';
+    const label = i === 0 ? 'Turn 1 — Setup' : i === turns.length - 1 ? `Turn ${{i + 1}} — Escalation` : `Turn ${{i + 1}} — Buildup`;
+    return `<div class="injection-fragment ${{fragClass}}">
+      <div class="frag-label">${{esc(label)}}</div>
+      <div class="frag-meta" style="color:var(--text-dim);font-size:12px;margin-bottom:6px">Tools called: ${{esc(tools)}}</div>
+      <div class="frag-payload">${{esc(prompt)}}</div>
+    </div>`;
+  }}).join('');
+
+  return `
+    <div class="card">
+      <div class="card-header">
+        <h3>Conversation Turn Sequence</h3>
+        <span class="tag" style="background:#eef1fb;color:var(--accent);border:1px solid #c7d2fe">${{esc(strategyLabel)}}</span>
+      </div>
+      <div class="card-body">${{items}}</div>
+    </div>`;
+}}
+
+function renderPoisonedRuntimeInfo(atk) {{
+  const meta = atk.attack_metadata || {{}};
+  if (!meta.poisoned_tool) return '';
+
+  return `
+    <div class="card">
+      <div class="card-header">
+        <h3>Poisoned Tool Description</h3>
+        <span class="tag" style="background:#fef2f2;color:var(--red);border:1px solid #fecaca">${{esc(meta.poisoned_tool)}}</span>
+      </div>
+      <div class="card-body">
+        <div style="margin-bottom:12px">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);margin-bottom:6px">Hidden Directive</div>
+          <div class="callout callout-warn">
+            <div style="white-space:pre-wrap;font-size:13px">${{esc(meta.directive || '')}}</div>
+          </div>
+        </div>
+        ${{meta.poisoned_docstring ? `
+        <details>
+          <summary style="font-size:12px;color:var(--text-dim);cursor:pointer;margin-bottom:6px">Full poisoned tool description (what the model sees)</summary>
+          <pre style="font-size:11px;max-height:200px;overflow:auto">${{esc(meta.poisoned_docstring)}}</pre>
+        </details>` : ''}}
+      </div>
+    </div>`;
+}}
+
+function renderMinjaInfo(atk) {{
+  const meta = atk.attack_metadata || {{}};
+  const queries = meta.phase1_queries || [];
+  if (queries.length === 0) return '';
+
+  const stored = meta.phase1_stored || 0;
+  const retrieved = meta.memory_retrieved_in_phase2 || false;
+
+  const queryCards = queries.map((q, i) => {{
+    const storedQ = q.stored_in_memory;
+    const followed = q.agent_followed_directive;
+    const color = storedQ ? 'var(--green)' : 'var(--text-dim)';
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span style="font-size:12px;font-weight:700;color:${{color}}">${{storedQ ? '✓ Stored' : '— Not stored'}}</span>
+        <span class="tag" style="background:#f0f2f7;color:var(--text-dim);font-size:10px">mode ${{q.mode}}</span>
+        ${{followed ? `<span class="tag tag-exfil" style="font-size:10px">agent followed directive</span>` : ''}}
+      </div>
+      <div style="font-size:13px;white-space:pre-wrap">${{esc(q.query)}}</div>
+      ${{q.agent_tools_called && q.agent_tools_called.length ? `<div style="font-size:11px;color:var(--text-dim);margin-top:4px">Tools: ${{esc(q.agent_tools_called.join(', '))}}</div>` : ''}}
+    </div>`;
+  }}).join('');
+
+  return `
+    <div class="card">
+      <div class="card-header">
+        <h3>MINJA Phase 1 — Memory Injection Queries</h3>
+        <span style="font-size:13px;color:var(--text-dim)">${{stored}}/${{queries.length}} stored &nbsp;·&nbsp; Phase 2 retrieved: ${{retrieved ? 'yes' : 'no'}}</span>
+      </div>
+      <div class="card-body">${{queryCards}}</div>
     </div>`;
 }}
 
