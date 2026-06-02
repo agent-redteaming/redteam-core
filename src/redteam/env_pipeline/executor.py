@@ -103,12 +103,40 @@ def _load_environment(
     return env_instance, exec_globals
 
 
+def _fuzzy_find(field_name: str, data: dict) -> Any:
+    """Find a value in data that plausibly corresponds to field_name.
+
+    LLMs often generate seed data with domain-prefixed field names that don't
+    exactly match the model: 'purchase_order_id' for model field 'id',
+    'vendor_name' for 'name', etc.
+
+    Strategy (in priority order):
+      1. Suffix match: seed key ends with '_<field_name>' → e.g. 'order_id' → 'id'
+      2. Prefix match: seed key starts with '<field_name>_' → e.g. 'id_number' → 'id'
+      3. Contains match: field_name appears as a word segment in the key
+    """
+    sentinel = object()
+    # Suffix: purchase_order_id → id, vendor_name → name
+    for key, val in data.items():
+        if key == f"{key.rsplit('_', 1)[0]}_{field_name}" or key.endswith(f"_{field_name}"):
+            return val
+    # Prefix: id_number → id
+    for key, val in data.items():
+        if key.startswith(f"{field_name}_"):
+            return val
+    return sentinel
+
+
+_FUZZY_SENTINEL = object()
+
+
 def _construct_from_seed(model_class: type, data: dict, exec_globals: dict) -> Any:
     """Recursively construct a model from seed data bypassing validation.
 
-    Used when the LLM generates seed data with field names that don't exactly
-    match the model (e.g., 'order_id' vs 'id'). Tries to map known fields and
-    falls back to model_construct() so execution can continue.
+    Handles two classes of LLM generation failures:
+    1. Exact field name mismatch: 'purchase_order_id' in seed vs 'id' in model
+       → fuzzy matching maps domain-prefixed keys to the model field
+    2. Missing fields entirely → type-appropriate defaults keep dry run running
     """
     if not isinstance(data, dict):
         return data
@@ -133,18 +161,23 @@ def _construct_from_seed(model_class: type, data: dict, exec_globals: dict) -> A
                     val = _construct_from_seed(annotation, val, exec_globals)
             cleaned[field_name] = val
         else:
-            # Try to set defaults for missing required fields to keep dry run running
-            default = field.default
-            if default is not None and str(default) != "PydanticUndefined":
-                cleaned[field_name] = default
-            elif "list" in str(field.annotation).lower():
-                cleaned[field_name] = []
-            elif "str" in str(field.annotation).lower():
-                cleaned[field_name] = ""
-            elif "float" in str(field.annotation).lower() or "int" in str(field.annotation).lower():
-                cleaned[field_name] = 0
+            # Try fuzzy match first: 'purchase_order_id' in seed → 'id' in model
+            fuzzy_val = _fuzzy_find(field_name, data)
+            if fuzzy_val is not _FUZZY_SENTINEL:
+                cleaned[field_name] = fuzzy_val
             else:
-                cleaned[field_name] = None  # model_construct accepts None for any type
+                # No match at all — use type-appropriate default to keep dry run running
+                default = field.default
+                if default is not None and str(default) != "PydanticUndefined":
+                    cleaned[field_name] = default
+                elif "list" in str(field.annotation).lower():
+                    cleaned[field_name] = []
+                elif "str" in str(field.annotation).lower():
+                    cleaned[field_name] = ""
+                elif "float" in str(field.annotation).lower() or "int" in str(field.annotation).lower():
+                    cleaned[field_name] = 0
+                else:
+                    cleaned[field_name] = None
 
     return model_class.model_construct(**cleaned)
 
@@ -195,7 +228,6 @@ def _extract_tool_schemas(exec_globals: dict) -> list[dict]:
                     ptype = "boolean"
             params[pname] = {"type": ptype, "description": f"The {pname} parameter"}
             if param.default is inspect.Parameter.empty:
-                log.warning("Parameter %s is required but has no default value", pname)
                 required.append(pname)
 
         tools.append({

@@ -894,6 +894,34 @@ function renderAttack(goal, atk, atkIdx) {{
     ? '<span class="badge badge-fail">VIOLATED</span>'
     : '<span class="badge badge-pass">passed</span>';
 
+  // Check for skip — attack didn't run, show reason prominently instead of blank tile
+  const skipEv = (atk.security_checks || []).find(c => c.status === 'skip' || c.status === 'neutral');
+  const skipMsg = !atk.attack_trace
+    ? ((atk.security_checks || []).map(c => c.message).join(' ') || 'Attack skipped')
+    : null;
+
+  if (skipMsg) {{
+    return `
+      <div style="border:2px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:32px;opacity:0.7">
+        <div style="padding:16px 20px;background:var(--surface2);display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:18px;color:var(--text-dim)">—</span>
+            <div>
+              <div style="font-size:15px;font-weight:700;color:var(--text)">${{esc(attackLabel(atk.type))}}</div>
+              <div style="font-size:12px;color:var(--text-dim);margin-top:2px">Skipped</div>
+            </div>
+          </div>
+          <span class="badge" style="background:#f0f2f7;color:var(--text-dim);border:1px solid var(--border)">skipped</span>
+        </div>
+        <div style="padding:16px 20px;background:var(--surface)">
+          <div class="callout callout-warn">
+            <div class="callout-label">Why this attack was skipped</div>
+            <div style="font-size:13px">${{esc(skipMsg)}}</div>
+          </div>
+        </div>
+      </div>`;
+  }}
+
   let topHtml = '';
   const type = atk.type;
 
