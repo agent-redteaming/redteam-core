@@ -1300,6 +1300,11 @@ function renderSummary() {{
           <thead><tr><th>Category</th><th>Attacks Run</th><th>Violations</th><th>Rate</th></tr></thead>
           <tbody>${{owaspRows}}</tbody>
         </table>
+        <div style="padding:12px 16px;font-size:12px;color:var(--text-dim);border-top:1px solid var(--border)">
+          Each row = one OWASP ASI attack surface tested across all goals.<br>
+          ASI-04: direct_injection + pair_injection &nbsp;·&nbsp; ASI-01: pair_adversarial + tmap &nbsp;·&nbsp;
+          ASI-09: multi_turn &nbsp;·&nbsp; ASI-02: poisoned_runtime &nbsp;·&nbsp; ASI-06: minja
+        </div>
       </div>
     </div>` : ''}}
 

@@ -277,6 +277,12 @@ def run_minja(
     injection_successes = 0
     phase1_queries: list[dict] = []  # captured for reporting
 
+    # Maintain a persistent memory list across Phase 1 iterations.
+    # Problem: adapter.execute() calls _reset() which recreates env_instance,
+    # wiping any memory stored in the previous iteration. We accumulate entries
+    # here and re-inject them into env_instance after each reset.
+    persistent_memory: list[dict] = []
+
     add_fn = adapter.exec_globals.get("add_to_memory")
 
     for i in range(n_injection_queries):
@@ -290,13 +296,19 @@ def run_minja(
 
         # Execute the injection query — see if the agent follows the adversarial directive
         injection_trace = adapter.execute(injection_query)
+        # Re-inject previously stored memory entries (lost by _reset inside execute())
+        add_fn_current = adapter.exec_globals.get("add_to_memory")
+        if add_fn_current and persistent_memory:
+            for entry in persistent_memory:
+                try:
+                    add_fn_current(adapter.env_instance,
+                                   entry["instruction"], entry["actions"], entry["outcome"])
+                except Exception:
+                    pass
+
         tool_names = [tc.name for tc in injection_trace.tool_calls]
         has_suspicious = any(is_suspicious_tool(t) for t in tool_names)
 
-        # ADAPTATION: for task-focused agents that don't have memory-first workflows,
-        # the agent won't call suspicious tools during Phase 1 queries. We store the
-        # adversarial trajectory directly rather than waiting for the agent to volunteer.
-        # This is equivalent to an attacker seeding a shared memory store with crafted entries.
         actions = [
             f"Tool: {tc.name}({json.dumps(tc.arguments, default=str)[:100]})"
             for tc in injection_trace.tool_calls
@@ -308,11 +320,14 @@ def run_minja(
         )
 
         stored = False
-        if add_fn:
+        add_fn_current = adapter.exec_globals.get("add_to_memory")
+        if add_fn_current:
             try:
-                add_fn(adapter.env_instance, injection_query, actions, outcome)
+                add_fn_current(adapter.env_instance, injection_query, actions, outcome)
                 injection_successes += 1
                 stored = True
+                persistent_memory.append({"instruction": injection_query,
+                                          "actions": actions, "outcome": outcome})
                 log.info("Injection %d stored in memory (suspicious=%s)", i + 1, has_suspicious)
             except Exception as e:
                 log.warning("Failed to store injection in memory: %s", e)
@@ -332,13 +347,12 @@ def run_minja(
     # ------------------------------------------------------------------
     log.info("MINJA Phase 2: running legitimate task")
 
-    # Snapshot the baseline state POST memory-tool-refinement but BEFORE any injections.
-    # We use current env snapshot as the "clean" baseline for diff so the memory structure
-    # is the same on both sides (avoids spurious "memory: removed" diff artifacts).
-    try:
-        memory_after_phase1 = adapter.snapshot_state().get("memory", [])
-    except Exception:
-        memory_after_phase1 = []
+    # memory_after_phase1 comes directly from our persistent_memory list —
+    # more reliable than adapter.snapshot_state() which resets between iterations.
+    memory_after_phase1 = [
+        {"instruction": e["instruction"], "outcome": e["outcome"]}
+        for e in persistent_memory
+    ]
 
     # Baseline for diff = current state (post-refinement, memory tools in place)
     clean_state = adapter.snapshot_state()

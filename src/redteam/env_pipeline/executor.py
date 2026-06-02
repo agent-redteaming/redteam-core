@@ -249,14 +249,19 @@ def _extract_tool_schemas(exec_globals: dict) -> list[dict]:
 def _full_env_snapshot(env_instance: Any) -> dict:
     """Capture full environment state including dynamically-added attributes.
 
-    model_dump() only captures declared Pydantic fields. Attributes added via
-    object.__setattr__ (e.g., outbox from the send_message refinement) are
-    invisible to model_dump(). This function captures both.
+    Uses model_dump(mode='json') to ensure nested Pydantic models (e.g. a Vendor
+    with a mutated email field inside env.vendors) are fully serialised as plain
+    dicts. Falls back to regular model_dump() and then to {} on error.
+    Attributes added via object.__setattr__ (outbox, memory, etc.) are captured
+    separately by iterating vars().
     """
     try:
-        state = env_instance.model_dump()
+        state = env_instance.model_dump(mode="json")
     except Exception:
-        state = {}
+        try:
+            state = env_instance.model_dump()
+        except Exception:
+            state = {}
     # Pick up any extra attrs set dynamically (e.g. env.outbox = [...])
     for key, val in vars(env_instance).items():
         if key.startswith("_") or key in state:
@@ -345,46 +350,55 @@ def _call_tool(name: str, arguments: dict, env_instance: Any, exec_globals: dict
 def _extract_accessed_records(tool_calls: list[ToolCall]) -> list[str]:
     """Extract IDs of records the agent accessed (for observe-then-inject).
 
-    Handles both exact 'id' field and domain-specific ID names (vendor_id,
-    order_id, customer_id, etc.) and responses nested under a collection key.
+    Handles:
+    - Exact 'id' field
+    - Domain-specific ID names (vendor_id, order_id, contact_id, etc.)
+    - Nested collections: {"vendors": [...], "contacts": [...]}
+    - Records with no ID field: uses a synthetic index so injection attacks
+      don't incorrectly skip when real data was returned
     """
     ids = []
 
-    def _find_id(obj: Any) -> str | None:
-        """Return the first ID-like value from a dict."""
+    def _find_id(obj: Any, fallback: str | None = None) -> str | None:
+        """Return the first ID-like value from a dict, or fallback synthetic id."""
         if not isinstance(obj, dict):
-            return None
-        # Prefer exact 'id', then any '*_id' field
+            return fallback
         if "id" in obj:
             return str(obj["id"])
         for key, val in obj.items():
             if key.endswith("_id") and isinstance(val, (str, int)):
                 return str(val)
-        return None
+        # No ID field found — use fallback to mark record as accessed
+        return fallback
 
-    for tc in tool_calls:
+    for tc_idx, tc in enumerate(tool_calls):
         response = tc.response
         if response is None:
             continue
-        # Direct list of records
-        if isinstance(response, list):
-            for item in response:
-                rid = _find_id(item)
+
+        if isinstance(response, list) and response:
+            for item_idx, item in enumerate(response):
+                # Synthetic fallback: tool_name[item_idx] so injection has a target
+                fallback = f"_{tc.name}_{item_idx}"
+                rid = _find_id(item, fallback=fallback)
                 if rid:
                     ids.append(rid)
+
         elif isinstance(response, dict):
-            # Direct record
             rid = _find_id(response)
             if rid:
                 ids.append(rid)
             else:
-                # Nested collection: {"orders": [...], "vendors": [...]}
+                # Nested collection: {"vendors": [...], "orders": [...]}
+                found_nested = False
                 for val in response.values():
-                    if isinstance(val, list):
-                        for item in val:
-                            rid = _find_id(item)
+                    if isinstance(val, list) and val:
+                        for item_idx, item in enumerate(val):
+                            fallback = f"_{tc.name}_{item_idx}"
+                            rid = _find_id(item, fallback=fallback)
                             if rid:
                                 ids.append(rid)
+                                found_nested = True
 
     return list(dict.fromkeys(ids))  # deduplicate preserving order
 

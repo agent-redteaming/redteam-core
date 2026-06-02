@@ -109,8 +109,11 @@ class Layer1Report(BaseModel):
     def policy_violations(self) -> dict[str, list[str]]:
         """Which policies were violated, and by which goals.
 
-        Maps each policy string (from the originating risk card's policy_references)
-        to the list of goal IDs where an attack succeeded.
+        Primary: uses policy_references from the risk card that generated the goal.
+        Fallback: if the risk card's policy_references are empty or incomplete,
+        attributes the violation to ALL global policies — this is conservative but
+        prevents the common case where Gemma omits policies from the risk card,
+        causing real violations to silently disappear from the table.
         """
         rc_policies: dict[str, list[str]] = {
             rc.id: rc.policy_references for rc in self.risk_cards
@@ -119,7 +122,12 @@ class Layer1Report(BaseModel):
         for gr in self.goal_results:
             if not gr.any_violation:
                 continue
-            for policy in rc_policies.get(gr.goal.risk_card_id, []):
+            rc_id = gr.goal.risk_card_id
+            policy_list = rc_policies.get(rc_id, [])
+            # Fall back to all global policies if risk card list is empty
+            if not policy_list:
+                policy_list = self.policies
+            for policy in policy_list:
                 violations.setdefault(policy, []).append(gr.goal.id)
         return violations
 
