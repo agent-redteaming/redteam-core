@@ -36,15 +36,23 @@ from redteam.runtime.chat_completions import ChatCompletionsRuntime
 
 log = logging.getLogger(__name__)
 
-# Full attack suite — run all of these against every goal by default.
-# Goals are channel-agnostic: the same objective is attempted through every
-# available attack surface so we get real OWASP coverage, not declared coverage.
+# Default attack suite — runs against every goal unless --attacks is specified.
+# Covers all 5 distinct OWASP attack surfaces; goals are channel-agnostic.
+#
+# PAIR_INJECTION is included alongside DIRECT_INJECTION: both attack via tool
+# response but PAIR_INJECTION iteratively refines the payload (N streams × K
+# iterations) and may succeed where a one-shot library payload fails.
+#
+# TMAP is excluded from the default because it seeds a 64-cell archive before
+# iterating (~150+ LLM calls per goal vs ~15-30 for the attacks below).
+# Use --tmap to opt in when you want exhaustive prompt-space exploration.
 ALL_ATTACKS: list[AttackType] = [
-    AttackType.DIRECT_INJECTION,
-    AttackType.PAIR_ADVERSARIAL,
-    AttackType.MULTI_TURN,
-    AttackType.POISONED_RUNTIME,
-    AttackType.MINJA,
+    AttackType.DIRECT_INJECTION,    # ASI-04: one-shot tool-response injection
+    AttackType.PAIR_INJECTION,      # ASI-04: iteratively refined tool-response payload
+    AttackType.PAIR_ADVERSARIAL,    # ASI-01: iteratively refined adversarial user prompt
+    AttackType.MULTI_TURN,          # ASI-09: trust exploitation across conversation turns
+    AttackType.POISONED_RUNTIME,    # ASI-02: hidden directive in tool description
+    AttackType.MINJA,               # ASI-06: memory injection
 ]
 
 

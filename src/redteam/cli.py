@@ -91,6 +91,10 @@ ATTACK_NAME_MAP = {
               help="PAIR: number of parallel streams (paper: 30).")
 @click.option("--pair-iterations", default=3, type=int, show_default=True,
               help="PAIR: iterations per stream (paper: 3).")
+@click.option("--tmap", is_flag=True, default=False,
+              help="Include T-MAP in the attack suite. Expensive: seeds 64 archive cells before "
+                   "iterating (~150+ LLM calls per goal). Use for deep exploration when other "
+                   "attacks have not found violations.")
 @click.option("--tmap-iterations", default=10, type=int, show_default=True,
               help="T-MAP: evolutionary generations (paper: 100).")
 @click.option("--multi-turn-turns", default=4, type=int, show_default=True,
@@ -108,6 +112,7 @@ def main(
     models: tuple[str, ...],
     attacks: tuple[str, ...],
     max_goals: int | None,
+    tmap: bool,
     pair_streams: int,
     pair_iterations: int,
     tmap_iterations: int,
@@ -143,6 +148,16 @@ def main(
             selected_attacks = list(AttackType)
         else:
             selected_attacks = [AttackType(ATTACK_NAME_MAP[a.lower()]) for a in attacks]
+
+    # --tmap appends T-MAP to whatever attack list will be used
+    if tmap:
+        if selected_attacks is None:
+            from redteam.orchestrator import ALL_ATTACKS
+            selected_attacks = list(ALL_ATTACKS)
+        if AttackType.TMAP not in selected_attacks:
+            selected_attacks.append(AttackType.TMAP)
+        console.print(f"[yellow]T-MAP enabled — ~{tmap_iterations * 3 * 5 + 64} additional LLM "
+                      f"calls per goal expected.[/yellow]")
 
     # Parse models
     from redteam.models.report import ModelConfig
