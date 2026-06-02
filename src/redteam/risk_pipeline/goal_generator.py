@@ -30,7 +30,7 @@ from redteam.models.risk import (
     RiskType,
     TriagedRisk,
 )
-from redteam.utils import get_attacker_client
+from redteam.utils import get_attacker_client, generator_temperature
 
 log = logging.getLogger(__name__)
 
@@ -113,7 +113,7 @@ def generate_goals(
 
     response = get_attacker_client(base_url).chat.completions.create(
         model=model,
-        temperature=0,
+        temperature=generator_temperature(),
         max_tokens=2048,
         messages=[
             {

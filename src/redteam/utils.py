@@ -10,6 +10,24 @@ import re
 from openai import OpenAI
 
 
+def generator_temperature(default: float = 0.4) -> float:
+    """Temperature for structured generation calls (risk cards, goals, environments).
+
+    Override at runtime: GENERATOR_TEMPERATURE=0.6 redteam-run ...
+    or set via --generator-temperature CLI flag (which sets this env var).
+    """
+    return float(os.environ.get("GENERATOR_TEMPERATURE", str(default)))
+
+
+def attacker_temperature(default: float = 0.7) -> float:
+    """Temperature for attack generation calls (PAIR, injection payloads, directives, etc.).
+
+    Override at runtime: ATTACKER_TEMPERATURE=1.0 redteam-run ...
+    or set via --attacker-temperature CLI flag (which sets this env var).
+    """
+    return float(os.environ.get("ATTACKER_TEMPERATURE", str(default)))
+
+
 def get_attacker_client(base_url: str | None = None) -> OpenAI:
     """Return an OpenAI-compatible client pointed at the attacker model endpoint."""
     return OpenAI(

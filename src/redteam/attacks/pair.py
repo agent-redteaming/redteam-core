@@ -45,6 +45,7 @@ from typing import Literal
 from openai import OpenAI
 
 from redteam.evaluation.deterministic import DEFAULT_SUSPICIOUS_TOOLS, is_suspicious_tool
+from redteam.utils import attacker_temperature as _attacker_temp
 from redteam.models.attacks import AttackResult, AttackType, InjectionScenario, InjectionPayload
 from redteam.models.environment import DryRunTrace, GeneratedEnvironment
 from redteam.models.risk import AttackerGoal
@@ -292,14 +293,14 @@ def _call_attacker(
     mode: str,
     max_n_attack_attempts: int = 5,
     max_tokens: int = 500,
-    temperature: float = 1.0,
+    temperature: float | None = None,  # None = use ATTACKER_TEMPERATURE env var (default 1.0)
     top_p: float = 0.9,
 ) -> tuple[dict | None, str | None]:
     """Call the attacker LLM and extract JSON. Retries up to max_n_attack_attempts times.
 
     Faithful to JailbreakingLLMs/conversers.py:_generate_attack:
       - Retries on JSON extraction failure
-      - Uses temperature=1.0, top_p=0.9 (paper values)
+      - Uses temperature=1.0, top_p=0.9 (paper values, overridable via ATTACKER_TEMPERATURE)
       - max_tokens=500
 
     ADAPTATION 5: No stop_token="}" because not all providers support it.
@@ -309,7 +310,7 @@ def _call_attacker(
         try:
             response = client.chat.completions.create(
                 model=model,
-                temperature=temperature,
+                temperature=_attacker_temp(default=1.0) if temperature is None else temperature,
                 top_p=top_p,
                 max_tokens=max_tokens,
                 messages=messages,

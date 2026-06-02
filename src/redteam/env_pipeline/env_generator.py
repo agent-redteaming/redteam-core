@@ -6,7 +6,7 @@ Ported from agent-policy-redteam/env_generator.py with adaptations:
   - Adds goal_id to GeneratedEnvironment
   - Improved JSON parsing and validation logging
 
-One LLM call per goal (temperature=0 for reproducibility).
+One LLM call per goal (temperature=0.4 for diversity).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import textwrap
 from redteam.env_pipeline.templates import COMMON_RULES, TEMPLATES
 from redteam.models.environment import GeneratedEnvironment
 from redteam.models.risk import AttackerGoal
-from redteam.utils import fix_json, get_attacker_client, strip_code_fences
+from redteam.utils import fix_json, get_attacker_client, strip_code_fences, generator_temperature
 
 log = logging.getLogger(__name__)
 
@@ -185,7 +185,7 @@ def generate_environment(
     environment is purpose-built for the attack: correct tools created, seed data
     spanning policy thresholds, attack-feasible by design.
 
-    One LLM call at temperature=0 (deterministic).
+    One LLM call at temperature=0.4.
     Falls through with a warning if validation fails — prototype behaviour.
     """
     model = model or os.environ.get("ATTACKER_MODEL") or os.environ.get("TARGET_MODEL", "qwen3.5:2b")
@@ -196,7 +196,7 @@ def generate_environment(
 
     response = get_attacker_client(base_url).chat.completions.create(
         model=model,
-        temperature=0,
+        temperature=generator_temperature(),
         max_tokens=4096,   # output: Python code + seed JSON (~1500 tokens needed; model context is shared)
         messages=[
             {

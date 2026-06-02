@@ -99,6 +99,14 @@ ATTACK_NAME_MAP = {
               help="T-MAP: evolutionary generations (paper: 100).")
 @click.option("--multi-turn-turns", default=4, type=int, show_default=True,
               help="Multi-turn: number of conversation turns.")
+@click.option("--generator-temperature", default=None, type=float,
+              help="Temperature for structured LLM generation (risk cards, goals, environments). "
+                   "Default: 0.4. Higher = more diverse but less structured output. "
+                   "Also settable via GENERATOR_TEMPERATURE env var.")
+@click.option("--attacker-temperature", default=None, type=float,
+              help="Temperature for attack content generation (PAIR prompts, injection payloads, "
+                   "turn sequences, directives). Default: 0.7-1.0 depending on attack. "
+                   "Also settable via ATTACKER_TEMPERATURE env var.")
 @click.option("--output", "-o", default="./runs", show_default=True,
               help="Directory to save results JSON.")
 @click.option("--output-html", is_flag=True, default=False,
@@ -113,6 +121,8 @@ def main(
     attacks: tuple[str, ...],
     max_goals: int | None,
     tmap: bool,
+    generator_temperature: float | None,
+    attacker_temperature: float | None,
     pair_streams: int,
     pair_iterations: int,
     tmap_iterations: int,
@@ -122,6 +132,15 @@ def main(
     verbose: bool,
 ) -> None:
     """redteam-core Layer 1 — systematic synthetic agent red-teaming."""
+
+    # Set temperature env vars before any LLM calls are made.
+    # The utility functions generator_temperature() / attacker_temperature()
+    # read from these env vars at call time, so setting them here ensures
+    # all subsequent calls pick up the CLI-specified values.
+    if generator_temperature is not None:
+        os.environ["GENERATOR_TEMPERATURE"] = str(generator_temperature)
+    if attacker_temperature is not None:
+        os.environ["ATTACKER_TEMPERATURE"] = str(attacker_temperature)
 
     # Logging
     level = logging.DEBUG if verbose else logging.INFO

@@ -34,7 +34,7 @@ from redteam.models.attacks import AttackResult, AttackType, InjectionScenario
 from redteam.models.environment import DryRunTrace, GeneratedEnvironment
 from redteam.models.risk import AttackerGoal
 from redteam.env_pipeline.adapter import SyntheticEnvTargetAdapter
-from redteam.utils import get_attacker_client
+from redteam.utils import get_attacker_client, attacker_temperature
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ JSON only, no markdown fences."""
     try:
         response = client.chat.completions.create(
             model=model,
-            temperature=0.7,
+            temperature=attacker_temperature(),
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )

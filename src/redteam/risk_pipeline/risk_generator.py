@@ -28,7 +28,7 @@ from redteam.models.risk import (
     RiskImpact,
     RiskSource,
 )
-from redteam.utils import get_attacker_client
+from redteam.utils import get_attacker_client, generator_temperature
 
 log = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ def generate_risk_cards(
 
     response = get_attacker_client(base_url).chat.completions.create(
         model=model,
-        temperature=0,
+        temperature=generator_temperature(),
         max_tokens=4096,
         messages=[
             {

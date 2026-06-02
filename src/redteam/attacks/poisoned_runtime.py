@@ -36,7 +36,7 @@ from redteam.models.attacks import AttackResult, AttackType
 from redteam.models.environment import DryRunTrace, GeneratedEnvironment
 from redteam.models.risk import AttackerGoal
 from redteam.env_pipeline.adapter import SyntheticEnvTargetAdapter
-from redteam.utils import get_attacker_client
+from redteam.utils import get_attacker_client, attacker_temperature
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ One to two sentences maximum."""
     try:
         response = client.chat.completions.create(
             model=model,
-            temperature=0.7,
+            temperature=attacker_temperature(),
             max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
         )
