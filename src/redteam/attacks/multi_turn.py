@@ -133,6 +133,8 @@ def run_multi_turn(
     n_turns: int = 4,
     attacker_base_url: str | None = None,
     attacker_model: str | None = None,
+    target_model: str | None = None,
+    target_base_url: str | None = None,
 ) -> AttackResult:
     """Run a multi-turn attack using the specified conversation strategy.
 
@@ -172,10 +174,10 @@ def run_multi_turn(
         from redteam.env_pipeline.executor import _run_agent_loop
         from redteam.runtime.chat_completions import ChatCompletionsRuntime
 
+        _target_model = target_model or os.environ.get("TARGET_MODEL", "qwen3.5:2b")
         runtime = ChatCompletionsRuntime(
-            base_url=os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
+            base_url=target_base_url or os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
         )
-        target_model = os.environ.get("TARGET_MODEL", "qwen3.5:2b")
 
         turn_trace = _run_agent_loop(
             adapter.env_instance,
@@ -183,7 +185,7 @@ def run_multi_turn(
             turn_prompt,
             adapter.tool_schemas,
             runtime,
-            target_model,
+            _target_model,
         )
 
         all_tool_calls.extend(turn_trace.tool_calls)

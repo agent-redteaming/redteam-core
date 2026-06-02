@@ -155,7 +155,7 @@ def _extract_json(s: str, mode: Literal["adversarial", "injection"] = "adversari
     ADAPTATION 4: injection mode checks for "payload" key instead of "prompt".
     """
     start_pos = s.find("{")
-    end_pos = s.find("}") + 1
+    end_pos = s.rfind("}") + 1  # rfind: use LAST brace so nested JSON in improvement text works
     if end_pos == 0:
         log.debug("No closing brace found in attacker output")
         return None, None

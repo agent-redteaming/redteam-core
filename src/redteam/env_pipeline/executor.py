@@ -4,7 +4,7 @@ Ported from agent-policy-redteam/executor.py with adaptations:
   - Uses AgentRuntime abstraction instead of direct OpenAI client calls
   - Takes model + runtime as explicit parameters (not env vars)
   - _run_agent_loop returns our DryRunTrace with accessed_records populated
-  - dry_run and attack_run are the two public entry points
+  - dry_run is the public entry point; all attack execution goes through SyntheticEnvTargetAdapter
 
 The executor is responsible for:
   1. exec()'ing the generated Python code (models + tool functions)
@@ -79,8 +79,14 @@ def _load_environment(
     exec_globals: dict[str, Any] = {}
     # Inject common stdlib so generated tool code doesn't get NameErrors
     exec("import datetime, json, math, re, random, uuid", exec_globals)
-    exec(_strip_code_fences(env.pydantic_model_code), exec_globals)
-    exec(_strip_code_fences(env.tool_function_code), exec_globals)
+    try:
+        exec(_strip_code_fences(env.pydantic_model_code), exec_globals)
+    except SyntaxError as e:
+        log.error("Generated model code has syntax error (%s) — environment will be limited", e)
+    try:
+        exec(_strip_code_fences(env.tool_function_code), exec_globals)
+    except SyntaxError as e:
+        log.error("Generated tool code has syntax error (%s) — tools unavailable", e)
 
     # Rebuild Pydantic models to resolve forward references
     for name, obj in list(exec_globals.items()):
@@ -499,41 +505,4 @@ def dry_run(
     )
     log.info("Dry run: %d tool calls, %d records accessed",
              len(trace.tool_calls), len(trace.accessed_records))
-    return trace
-
-
-def attack_run(
-    env: GeneratedEnvironment,
-    injection: InjectionScenario,
-    runtime: AgentRuntime,
-    model: str,
-) -> DryRunTrace:
-    """Run agent against the injected environment. Returns the attack trace."""
-    log.info("Attack run for goal %s", env.goal_id)
-
-    extra_seed = injection.additional_seed_data_json or "{}"
-    env_instance, exec_globals = _load_environment(env, extra_seed)
-
-    if injection.additional_env_code:
-        exec(_strip_code_fences(injection.additional_env_code), exec_globals)
-
-    # Apply injection payloads to seed data
-    seed_data = json.loads(_fix_json(env.seed_data_json))
-    payloads = [p.model_dump() for p in injection.payloads]
-    injected_seed = _apply_injections(seed_data, payloads)
-
-    # Re-instantiate environment with injected data
-    env_class = exec_globals["Environment"]
-    if isinstance(injected_seed, list):
-        model_fields = env_class.model_fields
-        list_fields = [k for k, v in model_fields.items() if "list" in str(v.annotation).lower()]
-        if list_fields:
-            injected_seed = {list_fields[0]: injected_seed}
-    env_instance = env_class(**injected_seed)
-
-    tool_schemas = _extract_tool_schemas(exec_globals)
-    trace = _run_agent_loop(
-        env_instance, exec_globals, env.user_task_prompt, tool_schemas, runtime, model
-    )
-    log.info("Attack run: %d tool calls", len(trace.tool_calls))
     return trace

@@ -143,7 +143,11 @@ def generate_goals(
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
 
-    goals_data = json.loads(raw)
+    try:
+        goals_data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        log.warning("Goal generator returned malformed JSON (%s) — skipping", e)
+        return []
     goals: list[AttackerGoal] = []
 
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}

@@ -135,6 +135,8 @@ def run_per_goal(
                 adapter=adapter,
                 attacker_base_url=attacker_base_url,
                 attacker_model=attacker_model,
+                target_model=model_config.model,
+                target_base_url=model_config.base_url,
                 pair_n_streams=pair_n_streams,
                 pair_k_iterations=pair_k_iterations,
                 tmap_iterations=tmap_iterations,
@@ -184,6 +186,8 @@ def _run_attack(
     adapter: SyntheticEnvTargetAdapter,
     attacker_base_url: str,
     attacker_model: str,
+    target_model: str,
+    target_base_url: str,
     pair_n_streams: int,
     pair_k_iterations: int,
     tmap_iterations: int,
@@ -214,7 +218,8 @@ def _run_attack(
         return run_tmap(**common, iterations=tmap_iterations)
 
     elif attack_type == AttackType.MULTI_TURN:
-        return run_multi_turn(**common, n_turns=multi_turn_n_turns)
+        return run_multi_turn(**common, n_turns=multi_turn_n_turns,
+                              target_model=target_model, target_base_url=target_base_url)
 
     elif attack_type == AttackType.POISONED_RUNTIME:
         return run_poisoned_runtime(**common)

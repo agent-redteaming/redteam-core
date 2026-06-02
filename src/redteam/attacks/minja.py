@@ -179,6 +179,7 @@ def _generate_injection_query(
     indication_mode: int,
     client: OpenAI,
     model: str,
+    tool_schemas: list[dict] | None = None,
 ) -> tuple[str, str]:
     """Generate an injection query (base instruction + indication prompt).
 
@@ -187,7 +188,7 @@ def _generate_injection_query(
       - domain_object is what the injection is "about" (for indication prompt)
     """
     tool_names = ", ".join(
-        t.get("function", {}).get("name", "") for t in []
+        t.get("function", {}).get("name", "") for t in (tool_schemas or [])
     ) or "available tools"
 
     # Generate the base query and directive from the goal
@@ -288,7 +289,8 @@ def run_minja(
     for i in range(n_injection_queries):
         mode = indication_modes[i % len(indication_modes)]
         injection_query, domain_object = _generate_injection_query(
-            goal, env, mode, client, attacker_model
+            goal, env, mode, client, attacker_model,
+            tool_schemas=adapter.tool_schemas,
         )
 
         log.debug("Injection query %d [mode=%d]: %s...", i + 1, mode, injection_query[:80])

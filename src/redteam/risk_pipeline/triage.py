@@ -17,6 +17,8 @@ Risk type drives which environment template is selected:
 
 from __future__ import annotations
 
+import re
+
 from redteam.models.risk import EnforcementLevel, RiskCard, RiskType, TriagedRisk
 
 
@@ -24,15 +26,22 @@ def triage_risk(risk_card: RiskCard) -> TriagedRisk:
     """Classify a RiskCard by enforcement level and risk type."""
 
     # --- Enforcement level ---
-    # Sandbox keywords in control descriptions indicate infrastructure enforcement
-    sandbox_keywords = [
-        "network", "filesystem", "process", "credential",
-        "sandbox", "container", "isolation",
+    # Sandbox keywords in control descriptions indicate infrastructure enforcement.
+    # Use word-boundary matching to avoid false positives: a control saying
+    # "Agents must not send data over network connections" should NOT be marked
+    # SANDBOX — "network" here describes the attack vector, not the control mechanism.
+    # Only mark SANDBOX when the control explicitly refers to infrastructure tooling.
+    sandbox_patterns = [
+        r"\bnetwork policy\b", r"\bfirewall\b", r"\bfilesystem\b",
+        r"\bprocess isolation\b", r"\bcredential injection\b",
+        r"\bsandbox\b", r"\bcontainer\b", r"\bisolation layer\b",
+        r"\bseccomp\b", r"\blandlock\b", r"\bselinux\b",
+        r"\bnamespace\b", r"\bsyscall\b",
     ]
     controls_text = " ".join(c.description.lower() for c in risk_card.risk_controls)
     enforcement_level = (
         EnforcementLevel.SANDBOX
-        if any(kw in controls_text for kw in sandbox_keywords)
+        if any(re.search(pat, controls_text) for pat in sandbox_patterns)
         else EnforcementLevel.AGENT
     )
 

@@ -599,6 +599,12 @@ def run_tmap(
         iterations, mutation_n, attacker_model,
     )
 
+    # Seed random for reproducibility — T-MAP uses random.choice() for cell/parent
+    # selection in the evolutionary loop, so the same run must produce the same
+    # archive exploration path. Seed from goal id for per-goal determinism.
+    import random as _random
+    _random.seed(hash(goal.id) & 0xFFFFFFFF)
+
     all_cells = [(risk, style) for risk in RISK_TYPES for style in ATTACK_STYLES]
     # 64 cells total: 8 risk_types × 8 attack_styles
 

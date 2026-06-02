@@ -144,7 +144,11 @@ def generate_risk_cards(
         raw = re.sub(r"^```(?:json)?\s*", "", raw)
         raw = re.sub(r"\s*```$", "", raw)
 
-    cards_data = json.loads(raw)
+    try:
+        cards_data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        log.warning("Risk generator returned malformed JSON (%s) — skipping", e)
+        return []
     cards: list[RiskCard] = []
 
     for i, item in enumerate(cards_data):

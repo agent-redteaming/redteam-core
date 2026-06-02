@@ -202,8 +202,13 @@ class SyntheticEnvTargetAdapter:
             self._clean_state_json = json.dumps(current, default=str)
 
     def snapshot_state(self) -> dict:
-        """Return current environment state as a dict (for state diffing)."""
-        return self.env_instance.model_dump()
+        """Return current environment state including dynamically-added attributes.
+
+        Uses _full_env_snapshot (not model_dump) so outbox and other attrs
+        set via object.__setattr__ are captured — these are the exact fields
+        that violation detection (outbox divergence) depends on.
+        """
+        return _executor._full_env_snapshot(self.env_instance)
 
     def clean_state(self) -> dict:
         """Return the original clean environment state."""
