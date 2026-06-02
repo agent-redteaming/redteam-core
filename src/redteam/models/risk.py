@@ -113,25 +113,6 @@ class ASICategory(str, Enum):
     ASI_10 = "ASI-10"  # Rogue Agents
 
 
-# ---------------------------------------------------------------------------
-# Attack channels
-# ---------------------------------------------------------------------------
-
-
-class AttackChannel(str, Enum):
-    """Where the adversarial input enters the agent.
-
-    Different channels require different attack implementations but all
-    run against the same synthetic environment — the environment provides
-    the tools and the observability regardless of which channel is used.
-    """
-
-    TOOL_RESPONSE = "tool_response"       # Injection: payload in tool result
-    USER_MESSAGE = "user_message"         # PAIR/T-MAP: adversarial user prompt
-    CONVERSATION = "conversation"         # Multi-turn: escalating across turns
-    TOOL_DESCRIPTION = "tool_description" # Poisoned runtime: hidden in schema
-    MEMORY = "memory"                     # MINJA: poisoned few-shot memory
-
 
 # ---------------------------------------------------------------------------
 # AttackerGoal — the unit of work for the per-goal pipeline
@@ -145,9 +126,11 @@ class AttackerGoal(BaseModel):
       - Generate a purpose-built synthetic environment
       - Define a concrete success criterion
       - Map to an OWASP ASI category
-      - Select which attack channels are applicable
 
-    This is the key bridge between threat model (RiskCard) and test case.
+    Goals are channel-agnostic: the same objective (success_criteria) can be
+    attempted via multiple attack channels (tool_response injection, adversarial
+    user message, memory poisoning, etc.). The orchestrator runs all applicable
+    attacks against every goal rather than pre-filtering by channel.
     """
 
     id: str                                  # e.g. "RC-001-G1"
@@ -157,4 +140,3 @@ class AttackerGoal(BaseModel):
     asi_category: ASICategory
     risk_type: RiskType
     severity: Literal["critical", "high", "medium", "low"]
-    attack_channels: list[AttackChannel]

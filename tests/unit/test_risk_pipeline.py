@@ -6,7 +6,6 @@ import pytest
 
 from redteam.models.risk import (
     ASICategory,
-    AttackChannel,
     EnforcementLevel,
     RiskCard,
     RiskConsequence,

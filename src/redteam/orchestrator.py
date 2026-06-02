@@ -28,7 +28,7 @@ from redteam.env_pipeline.executor import dry_run
 from redteam.models.attacks import AttackResult, AttackType
 from redteam.models.environment import GeneratedEnvironment
 from redteam.models.report import GoalResult, ModelConfig
-from redteam.models.risk import AttackerGoal, AttackChannel
+from redteam.models.risk import AttackerGoal
 from redteam.risk_pipeline.goal_generator import generate_goals
 from redteam.risk_pipeline.risk_generator import generate_risk_cards
 from redteam.risk_pipeline.triage import filter_agent_level, triage_risk
@@ -36,20 +36,16 @@ from redteam.runtime.chat_completions import ChatCompletionsRuntime
 
 log = logging.getLogger(__name__)
 
-# Default attack types to run if not specified
-DEFAULT_ATTACKS = [
+# Full attack suite — run all of these against every goal by default.
+# Goals are channel-agnostic: the same objective is attempted through every
+# available attack surface so we get real OWASP coverage, not declared coverage.
+ALL_ATTACKS: list[AttackType] = [
     AttackType.DIRECT_INJECTION,
     AttackType.PAIR_ADVERSARIAL,
+    AttackType.MULTI_TURN,
+    AttackType.POISONED_RUNTIME,
+    AttackType.MINJA,
 ]
-
-# Channel → attack type mapping
-CHANNEL_TO_ATTACKS: dict[AttackChannel, list[AttackType]] = {
-    AttackChannel.TOOL_RESPONSE: [AttackType.DIRECT_INJECTION, AttackType.PAIR_INJECTION],
-    AttackChannel.USER_MESSAGE: [AttackType.PAIR_ADVERSARIAL, AttackType.TMAP],
-    AttackChannel.CONVERSATION: [AttackType.MULTI_TURN],
-    AttackChannel.TOOL_DESCRIPTION: [AttackType.POISONED_RUNTIME],
-    AttackChannel.MEMORY: [AttackType.MINJA],
-}
 
 
 def attacks_for_goal(
@@ -58,19 +54,10 @@ def attacks_for_goal(
 ) -> list[AttackType]:
     """Determine which attacks to run for a goal.
 
-    If requested is specified, use that list (filtered to what's applicable).
-    Otherwise, derive from goal.attack_channels.
+    If --attacks was specified explicitly, honour that list.
+    Otherwise run the full suite: every goal is attacked from every surface.
     """
-    if requested:
-        return requested
-
-    attacks: list[AttackType] = []
-    for channel in goal.attack_channels:
-        for attack in CHANNEL_TO_ATTACKS.get(channel, []):
-            if attack not in attacks:
-                attacks.append(attack)
-
-    return attacks or DEFAULT_ATTACKS
+    return requested if requested else ALL_ATTACKS
 
 
 def run_per_goal(
@@ -90,7 +77,7 @@ def run_per_goal(
     Args:
         goal: The specific attacker goal to test.
         model_config: The target model configuration.
-        attack_types: Which attacks to run (None = derive from goal.attack_channels).
+        attack_types: Which attacks to run (None = full suite, all attack types).
         attacker_base_url: Attacker LLM endpoint (for generation + attack).
         attacker_model: Attacker model name.
         pair_n_streams: PAIR streams (paper: 30, reduced for speed).
@@ -259,7 +246,7 @@ def run_layer1(
         policies: List of operator policy statements.
         risk_cards: Pre-built RiskCards (None = generate from usecase + policies).
         models: Target models to test (None = use TARGET_MODEL env var).
-        attack_types: Attacks to run (None = derive from goal.attack_channels).
+        attack_types: Attacks to run (None = full suite, all attack types).
         max_goals: Limit number of goals (for quick runs).
         attacker_base_url: Attacker LLM endpoint.
         attacker_model: Attacker model name.
@@ -296,12 +283,13 @@ def run_layer1(
     all_goals = []
     for risk in agent_risks:
         goals = generate_goals(risk, model=attacker_model, base_url=attacker_base_url)
+        # Apply max_goals as a per-risk-card limit so every risk card is tested.
+        # Without this, a global limit would skip all goals from later risk cards.
+        if max_goals:
+            goals = goals[:max_goals]
         all_goals.extend(goals)
-    log.info("  Generated %d goals total", len(all_goals))
-
-    if max_goals:
-        all_goals = all_goals[:max_goals]
-        log.info("  Limited to %d goals (max_goals=%d)", len(all_goals), max_goals)
+    log.info("  Generated %d goals total (max_goals=%s per risk card)",
+             len(all_goals), max_goals or "unlimited")
 
     if not all_goals:
         log.warning("No goals generated — check risk generation and triage")

@@ -1,6 +1,5 @@
 from redteam.models.risk import (
     ASICategory,
-    AttackChannel,
     AttackerGoal,
     EnforcementLevel,
     RiskCard,
@@ -27,7 +26,6 @@ from redteam.models.report import GoalResult, Layer1Report, ModelConfig
 
 __all__ = [
     "ASICategory",
-    "AttackChannel",
     "AttackerGoal",
     "AttackResult",
     "AttackType",

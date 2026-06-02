@@ -6,7 +6,6 @@ import pytest
 
 from redteam.models import (
     ASICategory,
-    AttackChannel,
     AttackResult,
     AttackType,
     AttackerGoal,
@@ -88,7 +87,6 @@ def make_goal() -> AttackerGoal:
         asi_category=ASICategory.ASI_01,
         risk_type=RiskType.DATA_EXFILTRATION,
         severity="critical",
-        attack_channels=[AttackChannel.TOOL_RESPONSE, AttackChannel.USER_MESSAGE],
     )
 
 
@@ -97,7 +95,7 @@ def test_attacker_goal_roundtrip():
     restored = AttackerGoal.model_validate_json(goal.model_dump_json())
     assert restored.id == goal.id
     assert restored.asi_category == ASICategory.ASI_01
-    assert AttackChannel.TOOL_RESPONSE in restored.attack_channels
+    assert restored.success_criteria == goal.success_criteria
 
 
 # ---------------------------------------------------------------------------
