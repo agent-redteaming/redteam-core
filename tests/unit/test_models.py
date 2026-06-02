@@ -269,16 +269,17 @@ def test_goal_result_safe():
 
 
 def test_layer1_report_owasp_coverage():
+    # make_goal_result uses DIRECT_INJECTION → maps to ASI-04
     report = Layer1Report(
         usecase="HR agent for performance reviews",
         policies=["Agents must not exfiltrate PII"],
         goal_results=[make_goal_result(violated=True), make_goal_result(violated=False)],
     )
     coverage = report.owasp_coverage
-    asi_01 = coverage.get("ASI-01", {})
-    assert asi_01["goals_tested"] == 2
-    assert asi_01["violations"] == 1
-    assert asi_01["violation_rate"] == 0.5
+    asi_04 = coverage.get("ASI-04", {})
+    assert asi_04["attacks_run"] == 2
+    assert asi_04["violations"] == 1
+    assert asi_04["violation_rate"] == 0.5
 
 
 def test_layer1_report_model_comparison():

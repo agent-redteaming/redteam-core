@@ -555,7 +555,7 @@ function renderOverview() {{
         <div class="owasp-bar-wrap">
           <div class="owasp-bar" style="width:${{pctVal}}%;background:${{color}}"></div>
         </div>
-        <div class="owasp-stat" style="color:${{color}}">${{data.violations}}/${{data.goals_tested}} (${{pctVal}}%)</div>
+        <div class="owasp-stat" style="color:${{color}}">${{data.violations}}/${{data.attacks_run}} (${{pctVal}}%)</div>
       </div>`;
     }}).join('');
   }}
@@ -1235,7 +1235,7 @@ function renderSummary() {{
       const color = rate >= 0.5 ? 'var(--red)' : rate > 0 ? 'var(--orange)' : 'var(--green)';
       return `<tr>
         <td><span class="tag tag-asi">${{cat}}</span></td>
-        <td>${{data.goals_tested}}</td>
+        <td>${{data.attacks_run}}</td>
         <td>${{data.violations}}</td>
         <td style="color:${{color}};font-weight:600">${{pct(rate)}}</td>
       </tr>`;
@@ -1269,7 +1269,7 @@ function renderSummary() {{
       <div class="card-header"><h3>OWASP ASI Coverage</h3></div>
       <div class="card-body" style="padding:0">
         <table>
-          <thead><tr><th>Category</th><th>Tested</th><th>Violations</th><th>Rate</th></tr></thead>
+          <thead><tr><th>Category</th><th>Attacks Run</th><th>Violations</th><th>Rate</th></tr></thead>
           <tbody>${{owaspRows}}</tbody>
         </table>
       </div>

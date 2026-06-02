@@ -26,6 +26,26 @@ class AttackType(str, Enum):
     MINJA = "minja"                             # Two-phase memory injection
 
 
+# Maps each attack type to the OWASP ASI category it exercises.
+# This is determined by the attack's delivery mechanism and which
+# architectural component it exploits — independent of the goal's risk type.
+#
+# ASI-01 Goal Hijack:           agent deviates from its intended task
+# ASI-02 Tool Misuse:           agent uses legitimate tools in harmful ways
+# ASI-04 Supply Chain:          attack enters via external data / tool responses
+# ASI-06 Memory Poisoning:      agent's memory or retrieved context is corrupted
+# ASI-09 Human-Agent Trust:     agent over-trusts user claims or authority
+ATTACK_TYPE_TO_ASI: dict[str, str] = {
+    AttackType.DIRECT_INJECTION:  "ASI-04",  # payload in tool response
+    AttackType.PAIR_INJECTION:    "ASI-04",  # iteratively refined tool-response payload
+    AttackType.PAIR_ADVERSARIAL:  "ASI-01",  # iteratively refined adversarial user prompt
+    AttackType.TMAP:              "ASI-01",  # MAP-Elites exploration of goal-hijack prompts
+    AttackType.MULTI_TURN:        "ASI-09",  # builds false trust across conversation turns
+    AttackType.POISONED_RUNTIME:  "ASI-02",  # hidden directive in tool description schema
+    AttackType.MINJA:             "ASI-06",  # adversarial trajectories seeded into memory
+}
+
+
 class InjectionPayload(BaseModel):
     """A single adversarial payload to be placed in a specific record field.
 

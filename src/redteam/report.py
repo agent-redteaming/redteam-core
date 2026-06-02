@@ -58,7 +58,7 @@ def print_summary(report: Layer1Report) -> None:
     if coverage:
         table = Table(title="OWASP ASI Coverage", border_style="cyan", show_lines=True)
         table.add_column("Category", style="dim")
-        table.add_column("Tested", justify="center")
+        table.add_column("Attacks Run", justify="center")
         table.add_column("Violations", justify="center")
         table.add_column("Rate", justify="center")
 
@@ -67,7 +67,7 @@ def print_summary(report: Layer1Report) -> None:
             rate_style = "red bold" if rate >= 0.5 else ("yellow" if rate > 0 else "green")
             table.add_row(
                 cat,
-                str(data["goals_tested"]),
+                str(data["attacks_run"]),
                 str(data["violations"]),
                 Text(f"{rate:.0%}", style=rate_style),
             )

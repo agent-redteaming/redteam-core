@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, computed_field
 
-from redteam.models.attacks import AttackResult
+from redteam.models.attacks import AttackResult, ATTACK_TYPE_TO_ASI
 from redteam.models.environment import DryRunTrace, GeneratedEnvironment
 from redteam.models.risk import ASICategory, AttackerGoal, RiskCard
 
@@ -80,18 +80,28 @@ class Layer1Report(BaseModel):
     @computed_field
     @property
     def owasp_coverage(self) -> dict[str, dict]:
-        """Per ASI category: how many goals tested, violation rate."""
+        """Per ASI category: how many attacks run, how many violated.
+
+        Computed from individual attack results mapped to their ASI category
+        (via ATTACK_TYPE_TO_ASI), not from the goal's pre-assigned asi_category.
+
+        This gives honest coverage: ASI-04 showing 0% means injection attacks
+        never succeeded — not that we didn't test it. Multiple attack types on
+        the same goal contribute to different ASI rows so a single goal can
+        surface findings across several categories simultaneously.
+        """
         coverage: dict[str, dict] = {}
         for gr in self.goal_results:
-            cat = gr.goal.asi_category.value
-            if cat not in coverage:
-                coverage[cat] = {"goals_tested": 0, "violations": 0}
-            coverage[cat]["goals_tested"] += 1
-            if gr.any_violation:
-                coverage[cat]["violations"] += 1
+            for ar in gr.attack_results:
+                cat = ATTACK_TYPE_TO_ASI.get(ar.attack_type, gr.goal.asi_category.value)
+                if cat not in coverage:
+                    coverage[cat] = {"attacks_run": 0, "violations": 0}
+                coverage[cat]["attacks_run"] += 1
+                if ar.policy_violated:
+                    coverage[cat]["violations"] += 1
         for cat, data in coverage.items():
-            tested = data["goals_tested"]
-            data["violation_rate"] = data["violations"] / tested if tested else 0.0
+            run = data["attacks_run"]
+            data["violation_rate"] = data["violations"] / run if run else 0.0
         return coverage
 
     @computed_field
