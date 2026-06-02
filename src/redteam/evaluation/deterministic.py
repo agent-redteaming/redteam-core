@@ -263,8 +263,9 @@ def evaluate_utility(
     else:
         missing = set(clean_data) - set(attack_data)
         extra = set(attack_data) - set(clean_data)
-        fmt = lambda s: "{}" if not s else str(s)
-        evidence.append(f"FAIL: Tool mismatch — missing: {fmt(missing)}, extra: {fmt(extra)}")
+        def _fmt_set(s: set) -> str:
+            return "{}" if not s else str(s)
+        evidence.append(f"FAIL: Tool mismatch — missing: {_fmt_set(missing)}, extra: {_fmt_set(extra)}")
 
     # 2. Same records accessed?
     def _record_ids(trace: DryRunTrace) -> set[str]:

@@ -26,25 +26,16 @@ import logging
 import os
 from typing import Literal
 
-from openai import OpenAI
-
 from redteam.evaluation.deterministic import DEFAULT_SUSPICIOUS_TOOLS, deep_diff, evaluate_utility
 from redteam.models.attacks import AttackResult, AttackType, InjectionScenario
 from redteam.models.environment import DryRunTrace, GeneratedEnvironment
 from redteam.models.risk import AttackerGoal
 from redteam.env_pipeline.adapter import SyntheticEnvTargetAdapter
+from redteam.utils import get_attacker_client
 
 log = logging.getLogger(__name__)
 
 Strategy = Literal["chain_decomposition", "context_poisoning", "progressive_escalation"]
-
-
-def _get_client(base_url: str | None = None) -> OpenAI:
-    return OpenAI(
-        base_url=base_url or os.environ.get("ATTACKER_BASE_URL")
-               or os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
-        api_key=os.environ.get("OPENAI_API_KEY", "ollama"),
-    )
 
 
 def _generate_turn_sequence(
@@ -147,7 +138,7 @@ def run_multi_turn(
     """
     attacker_model = attacker_model or os.environ.get("ATTACKER_MODEL") or \
                      os.environ.get("TARGET_MODEL", "qwen3.5:2b")
-    client = _get_client(attacker_base_url)
+    client = get_attacker_client(attacker_base_url)
 
     log.info("Multi-turn [strategy=%s, n_turns=%d]", strategy, n_turns)
 

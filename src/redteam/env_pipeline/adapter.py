@@ -20,6 +20,7 @@ from typing import Any
 from redteam.env_pipeline import executor as _executor
 from redteam.env_pipeline.executor import _safe_instantiate
 from redteam.evaluation.deterministic import DEFAULT_SUSPICIOUS_TOOLS
+from redteam.utils import strip_code_fences
 from redteam.models.attacks import InjectionScenario
 from redteam.models.environment import (
     DryRunTrace,
@@ -183,7 +184,7 @@ class SyntheticEnvTargetAdapter:
         Additive — never replaces existing tools or data.
         """
         if refinement.additional_env_code:
-            exec(_executor._strip_code_fences(refinement.additional_env_code), self.exec_globals)
+            exec(strip_code_fences(refinement.additional_env_code), self.exec_globals)
             self._tool_schemas = _executor._extract_tool_schemas(self.exec_globals)
             log.info("Refinement applied for %s: %d tools now available",
                      refinement.attack_type, len(self._tool_schemas))

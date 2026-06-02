@@ -127,6 +127,11 @@ JSON only, no markdown fences."""
         data = json.loads(raw)
         reasoning = data.get("reasoning", "")
         confidence = float(data.get("confidence", 0.5))
+        # Note: data["violated"] is logged for observability but intentionally
+        # not used to override result.policy_violated. The deterministic score
+        # is the authoritative finding; the judge adds reasoning + confidence
+        # without changing the verdict. This prevents LLM hallucinations from
+        # creating false positives in the official results.
         log.info("Judge: violated=%s (confidence=%.0f%%) — %s",
                  data.get("violated"), confidence * 100, reasoning[:80])
 

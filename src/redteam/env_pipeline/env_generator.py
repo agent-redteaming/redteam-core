@@ -11,28 +11,18 @@ One LLM call per goal (temperature=0 for reproducibility).
 
 from __future__ import annotations
 
-import ast
 import json
 import logging
 import os
 import re
 import textwrap
 
-from openai import OpenAI
-
 from redteam.env_pipeline.templates import COMMON_RULES, TEMPLATES
 from redteam.models.environment import GeneratedEnvironment
 from redteam.models.risk import AttackerGoal
+from redteam.utils import fix_json, get_attacker_client, strip_code_fences
 
 log = logging.getLogger(__name__)
-
-
-def _get_client(base_url: str | None = None) -> OpenAI:
-    return OpenAI(
-        base_url=base_url or os.environ.get("ATTACKER_BASE_URL")
-               or os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
-        api_key=os.environ.get("OPENAI_API_KEY", "ollama"),
-    )
 
 
 def _build_prompt(goal: AttackerGoal, policies: list[str] | None = None) -> str:
@@ -96,42 +86,6 @@ def _build_prompt(goal: AttackerGoal, policies: list[str] | None = None) -> str:
 
     Keep code minimal. JSON only, no markdown.
     """)
-
-
-def _strip_fences(text: str) -> str:
-    """Strip markdown code fences from LLM output."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json|python)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-    return text.strip()
-
-
-def _fix_json(text: str) -> str:
-    """Attempt to fix common JSON issues in LLM output (from agent-policy-redteam's impl)."""
-    text = text.strip()
-    try:
-        json.loads(text)
-        return text
-    except json.JSONDecodeError:
-        pass
-    try:
-        obj = ast.literal_eval(text)
-        return json.dumps(obj)
-    except (ValueError, SyntaxError):
-        pass
-    fixed = text.replace("'", '"')
-    try:
-        json.loads(fixed)
-        return fixed
-    except json.JSONDecodeError:
-        pass
-    fixed = re.sub(r",\s*([}\]])", r"\1", text)
-    try:
-        json.loads(fixed)
-        return fixed
-    except json.JSONDecodeError:
-        return text
 
 
 def _synthesize_read_tool(tool_name: str) -> str:
@@ -240,7 +194,7 @@ def generate_environment(
     log.info("Generating environment [model=%s] for goal %s (risk_type: %s)",
              model, goal.id, goal.risk_type)
 
-    response = _get_client(base_url).chat.completions.create(
+    response = get_attacker_client(base_url).chat.completions.create(
         model=model,
         temperature=0,
         max_tokens=4096,   # output: Python code + seed JSON (~1500 tokens needed; model context is shared)
@@ -257,23 +211,23 @@ def generate_environment(
         ],
     )
 
-    raw_text = _strip_fences(response.choices[0].message.content or "")
+    raw_text = strip_code_fences(response.choices[0].message.content or "")
 
     try:
         raw = json.loads(raw_text)
     except json.JSONDecodeError:
-        raw = json.loads(_fix_json(raw_text))
+        raw = json.loads(fix_json(raw_text))
 
     # Normalise seed_data_json — LLM sometimes returns a dict instead of a string
     seed_data = raw["seed_data_json"]
     if isinstance(seed_data, (dict, list)):
         seed_data = json.dumps(seed_data)
     else:
-        seed_data = _fix_json(str(seed_data))
+        seed_data = fix_json(str(seed_data))
 
     # Strip any fences from code fields
-    model_code = _strip_fences(raw["pydantic_model_code"])
-    tool_code = _strip_fences(raw["tool_function_code"])
+    model_code = strip_code_fences(raw["pydantic_model_code"])
+    tool_code = strip_code_fences(raw["tool_function_code"])
 
     env = GeneratedEnvironment(
         goal_id=goal.id,

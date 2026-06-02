@@ -24,14 +24,13 @@ import os
 import re
 import textwrap
 
-from openai import OpenAI
-
 from redteam.models.risk import (
     ASICategory,
     AttackerGoal,
     RiskType,
     TriagedRisk,
 )
+from redteam.utils import get_attacker_client
 
 log = logging.getLogger(__name__)
 
@@ -44,14 +43,6 @@ OWASP ASI CATEGORIES — map each goal to the architectural component that fails
   ASI-06: Memory & Context Poisoning — agent's memory or retrieved examples are poisoned
   ASI-09: Human-Agent Trust Exploitation — agent over-trusts user claims/authority
 """
-
-
-def _get_client(base_url: str | None = None) -> OpenAI:
-    return OpenAI(
-        base_url=base_url or os.environ.get("ATTACKER_BASE_URL")
-               or os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
-        api_key=os.environ.get("OPENAI_API_KEY", "ollama"),
-    )
 
 
 def _build_prompt(triaged: TriagedRisk) -> str:
@@ -120,7 +111,7 @@ def generate_goals(
     log.info("Generating goals for risk %s (type: %s)",
              triaged.risk_card.id, triaged.risk_type)
 
-    response = _get_client(base_url).chat.completions.create(
+    response = get_attacker_client(base_url).chat.completions.create(
         model=model,
         temperature=0,
         max_tokens=2048,

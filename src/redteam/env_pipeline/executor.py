@@ -15,18 +15,17 @@ The executor is responsible for:
 
 from __future__ import annotations
 
-import ast
 import copy
 import inspect
 import json
 import logging
 import os
-import re
 from typing import Any
 
 from redteam.models.environment import DryRunTrace, GeneratedEnvironment, ToolCall
 from redteam.models.attacks import InjectionScenario
 from redteam.runtime.base import AgentRuntime
+from redteam.utils import fix_json, strip_code_fences
 
 log = logging.getLogger(__name__)
 
@@ -36,35 +35,6 @@ MAX_TURNS = int(os.environ.get("REDTEAM_MAX_TURNS", "10"))
 # ---------------------------------------------------------------------------
 # Internal helpers (ported from agent-policy-redteam)
 # ---------------------------------------------------------------------------
-
-
-def _fix_json(text: str) -> str:
-    """Fix common JSON issues in LLM output."""
-    text = text.strip()
-    try:
-        json.loads(text)
-        return text
-    except json.JSONDecodeError:
-        pass
-    try:
-        obj = ast.literal_eval(text)
-        return json.dumps(obj)
-    except (ValueError, SyntaxError):
-        pass
-    fixed = re.sub(r",\s*([}\]])", r"\1", text.replace("'", '"'))
-    try:
-        json.loads(fixed)
-        return fixed
-    except json.JSONDecodeError:
-        return text
-
-
-def _strip_code_fences(code: str) -> str:
-    code = code.strip()
-    if code.startswith("```"):
-        code = re.sub(r"^```(?:python)?\s*", "", code)
-        code = re.sub(r"\s*```$", "", code)
-    return code
 
 
 def _load_environment(
@@ -80,11 +50,11 @@ def _load_environment(
     # Inject common stdlib so generated tool code doesn't get NameErrors
     exec("import datetime, json, math, re, random, uuid", exec_globals)
     try:
-        exec(_strip_code_fences(env.pydantic_model_code), exec_globals)
+        exec(strip_code_fences(env.pydantic_model_code), exec_globals)
     except SyntaxError as e:
         log.error("Generated model code has syntax error (%s) — environment will be limited", e)
     try:
-        exec(_strip_code_fences(env.tool_function_code), exec_globals)
+        exec(strip_code_fences(env.tool_function_code), exec_globals)
     except SyntaxError as e:
         log.error("Generated tool code has syntax error (%s) — tools unavailable", e)
 
@@ -97,7 +67,7 @@ def _load_environment(
                 pass
 
     env_class = exec_globals["Environment"]
-    seed = json.loads(_fix_json(env.seed_data_json))
+    seed = json.loads(fix_json(env.seed_data_json))
 
     # Normalise if LLM returned a list instead of a dict.
     # Two patterns seen in practice:

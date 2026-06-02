@@ -27,8 +27,6 @@ import json
 import logging
 import os
 
-from openai import OpenAI
-
 from redteam.evaluation.deterministic import (
     DEFAULT_SUSPICIOUS_TOOLS,
     deep_diff,
@@ -38,16 +36,9 @@ from redteam.models.attacks import AttackResult, AttackType
 from redteam.models.environment import DryRunTrace, GeneratedEnvironment
 from redteam.models.risk import AttackerGoal
 from redteam.env_pipeline.adapter import SyntheticEnvTargetAdapter
+from redteam.utils import get_attacker_client
 
 log = logging.getLogger(__name__)
-
-
-def _get_client(base_url: str | None = None) -> OpenAI:
-    return OpenAI(
-        base_url=base_url or os.environ.get("ATTACKER_BASE_URL")
-               or os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
-        api_key=os.environ.get("OPENAI_API_KEY", "ollama"),
-    )
 
 
 def _generate_directive(
@@ -114,7 +105,7 @@ def run_poisoned_runtime(
     """
     attacker_model = attacker_model or os.environ.get("ATTACKER_MODEL") or \
                      os.environ.get("TARGET_MODEL", "qwen3.5:2b")
-    client = _get_client(attacker_base_url)
+    client = get_attacker_client(attacker_base_url)
 
     # Select target tool: most frequently called in dry run (most likely to be invoked)
     tool_call_counts: dict[str, int] = {}

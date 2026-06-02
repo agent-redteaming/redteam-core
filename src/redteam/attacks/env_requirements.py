@@ -28,13 +28,12 @@ INJECTABLE_FIELDS = {"notes", "description", "memo", "comment", "body",
 
 
 def has_injectable_field(adapter: SyntheticEnvTargetAdapter) -> bool:
-    """Check if any tool response contains a text field we can inject into."""
-    # Check tool schemas for known injectable field names
-    for tool in adapter.tool_schemas:
-        props = tool.get("function", {}).get("parameters", {}).get("properties", {})
-        if any(k in INJECTABLE_FIELDS for k in props):
-            return True
-    # Also check if entity classes have injectable fields (from exec_globals)
+    """Check if any entity class has a text field we can inject into.
+
+    Checks exec_globals for Pydantic model classes with known injectable field
+    names (notes, description, etc.). Tool schema parameters are NOT checked —
+    injectable fields are in response data (entity attributes), not tool inputs.
+    """
     for name, obj in adapter.exec_globals.items():
         if isinstance(obj, type) and hasattr(obj, "model_fields"):
             if any(f in INJECTABLE_FIELDS for f in obj.model_fields):

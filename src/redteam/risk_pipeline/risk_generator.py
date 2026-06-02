@@ -21,8 +21,6 @@ import os
 import re
 import textwrap
 
-from openai import OpenAI
-
 from redteam.models.risk import (
     RiskCard,
     RiskConsequence,
@@ -30,16 +28,9 @@ from redteam.models.risk import (
     RiskImpact,
     RiskSource,
 )
+from redteam.utils import get_attacker_client
 
 log = logging.getLogger(__name__)
-
-
-def _get_client(base_url: str | None = None) -> OpenAI:
-    return OpenAI(
-        base_url=base_url or os.environ.get("ATTACKER_BASE_URL")
-               or os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
-        api_key=os.environ.get("OPENAI_API_KEY", "ollama"),
-    )
 
 
 def _build_prompt(usecase: str, policies: list[str]) -> str:
@@ -122,7 +113,7 @@ def generate_risk_cards(
 
     log.info("Generating risk cards [model=%s] usecase: %s...", model, usecase[:60])
 
-    response = _get_client(base_url).chat.completions.create(
+    response = get_attacker_client(base_url).chat.completions.create(
         model=model,
         temperature=0,
         max_tokens=4096,

@@ -51,8 +51,6 @@ import logging
 import os
 from typing import NamedTuple
 
-from openai import OpenAI
-
 from redteam.evaluation.deterministic import (
     DEFAULT_SUSPICIOUS_TOOLS,
     deep_diff,
@@ -66,6 +64,7 @@ from redteam.models.environment import (
 )
 from redteam.models.risk import AttackerGoal
 from redteam.env_pipeline.adapter import SyntheticEnvTargetAdapter
+from redteam.utils import get_attacker_client
 
 log = logging.getLogger(__name__)
 
@@ -165,14 +164,6 @@ def _ensure_memory_tools(adapter: SyntheticEnvTargetAdapter) -> bool:
     return has_memory
 
 
-def _get_client(base_url: str | None = None) -> OpenAI:
-    return OpenAI(
-        base_url=base_url or os.environ.get("ATTACKER_BASE_URL")
-               or os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
-        api_key=os.environ.get("OPENAI_API_KEY", "ollama"),
-    )
-
-
 def _generate_injection_query(
     goal: AttackerGoal,
     env: GeneratedEnvironment,
@@ -260,7 +251,7 @@ def run_minja(
     """
     attacker_model = attacker_model or os.environ.get("ATTACKER_MODEL") or \
                      os.environ.get("TARGET_MODEL", "qwen3.5:2b")
-    client = _get_client(attacker_base_url)
+    client = get_attacker_client(attacker_base_url)
     indication_modes = indication_modes or [0, 1, 2]
 
     log.info("MINJA [n_injection=%d, modes=%s]", n_injection_queries, indication_modes)

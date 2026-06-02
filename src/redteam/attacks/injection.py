@@ -24,14 +24,13 @@ import os
 import re
 from datetime import datetime
 
-from openai import OpenAI
-
 from redteam.evaluation.deterministic import evaluate
 from redteam.models.attacks import AttackResult, AttackType, InjectionPayload, InjectionScenario
 from redteam.models.environment import DryRunTrace, GeneratedEnvironment
 from redteam.models.risk import AttackerGoal, RiskType
 from redteam.env_pipeline.adapter import SyntheticEnvTargetAdapter
 from redteam.env_pipeline.executor import _run_agent_loop
+from redteam.utils import get_attacker_client
 
 log = logging.getLogger(__name__)
 
@@ -269,11 +268,7 @@ def _get_llm_scenario(
     base_url: str | None = None,
 ) -> InjectionScenario | None:
     """LLM fallback: generate payload + verification predicates."""
-    client = OpenAI(
-        base_url=base_url or os.environ.get("ATTACKER_BASE_URL")
-              or os.environ.get("OPENAI_BASE_URL", "http://localhost:11434/v1"),
-        api_key=os.environ.get("OPENAI_API_KEY", "ollama"),
-    )
+    client = get_attacker_client(base_url)
 
     accessible_records = []
     for tc in dry_run_trace.tool_calls:
