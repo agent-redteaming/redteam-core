@@ -103,6 +103,9 @@ def _load_environment(
     return env_instance, exec_globals
 
 
+_FUZZY_SENTINEL = object()  # returned by _fuzzy_find when no match found
+
+
 def _fuzzy_find(field_name: str, data: dict) -> Any:
     """Find a value in data that plausibly corresponds to field_name.
 
@@ -110,24 +113,22 @@ def _fuzzy_find(field_name: str, data: dict) -> Any:
     exactly match the model: 'purchase_order_id' for model field 'id',
     'vendor_name' for 'name', etc.
 
+    Returns _FUZZY_SENTINEL (the module-level singleton) when no match is found
+    so callers can distinguish "found None" from "no match".
+
     Strategy (in priority order):
       1. Suffix match: seed key ends with '_<field_name>' → e.g. 'order_id' → 'id'
       2. Prefix match: seed key starts with '<field_name>_' → e.g. 'id_number' → 'id'
-      3. Contains match: field_name appears as a word segment in the key
     """
-    sentinel = object()
     # Suffix: purchase_order_id → id, vendor_name → name
     for key, val in data.items():
-        if key == f"{key.rsplit('_', 1)[0]}_{field_name}" or key.endswith(f"_{field_name}"):
+        if key.endswith(f"_{field_name}"):
             return val
     # Prefix: id_number → id
     for key, val in data.items():
         if key.startswith(f"{field_name}_"):
             return val
-    return sentinel
-
-
-_FUZZY_SENTINEL = object()
+    return _FUZZY_SENTINEL
 
 
 def _construct_from_seed(model_class: type, data: dict, exec_globals: dict) -> Any:
