@@ -224,7 +224,22 @@ class SyntheticEnvTargetAdapter:
     # ------------------------------------------------------------------
 
     def _reset(self) -> None:
-        """Reset environment to clean state."""
+        """Reset environment to clean state and unwrap any injection wrappers.
+
+        Unwrapping on reset ensures tool functions in exec_globals are always
+        at their original state before a new attack runs. Without this, injection
+        wrappers from one attack (e.g. direct_injection) stack onto the next
+        (pair_injection), producing multi-layered wrappers with stale payloads.
+        """
+        import inspect as _inspect
+        # Unwrap any injection wrappers so exec_globals is back to original functions
+        for name, obj in list(self.exec_globals.items()):
+            if callable(obj) and not isinstance(obj, type) and hasattr(obj, "__wrapped__"):
+                try:
+                    self.exec_globals[name] = _inspect.unwrap(obj)
+                except Exception:
+                    pass
+
         env_class = type(self.env_instance)
         clean = json.loads(self._clean_state_json)
         self.env_instance = _safe_instantiate(env_class, clean, self.exec_globals)
@@ -264,20 +279,26 @@ class SyntheticEnvTargetAdapter:
             if name in skip:
                 continue
 
-            original = obj
+            # Always unwrap to the original function before wrapping.
+            # Without this, repeated calls to _apply_injections (e.g. across PAIR
+            # iterations) stack wrappers: wrapper9(wrapper8(...(wrapper1(original)))).
+            # Each layer applies a DIFFERENT payload from a previous iteration,
+            # producing garbled output and making it impossible to see the current
+            # iteration's payload cleanly.
+            import inspect as _inspect
+            try:
+                original = _inspect.unwrap(obj)
+            except Exception:
+                original = obj
 
             def _make_wrapper(fn, payload, preferred_fields):
                 import functools, inspect
 
                 @functools.wraps(fn)
                 def wrapper(env, **kwargs):
-                    # Reconstruct positional args from kwargs using original signature.
-                    # _call_tool calls us as func(env_instance, **coerced); we forward
-                    # to the original which also expects (env, **params).
                     result = fn(env, **kwargs)
                     return _inject_into_result(result, payload, preferred_fields)
 
-                # Override signature so _extract_tool_schemas sees original params.
                 try:
                     wrapper.__signature__ = inspect.signature(fn)
                 except Exception:
