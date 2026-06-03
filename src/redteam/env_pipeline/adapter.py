@@ -83,11 +83,14 @@ def _inject_into_result(result: Any, payload: str, preferred_fields: list[str]) 
 
 
 def _inject_into_record(record: Any, payload: str, preferred_fields: list[str]) -> Any:
-    """Embed payload into a single record dict, choosing the best text field.
+    """Embed payload into a single record — dict, or string if the tool returns strings.
 
-    Injects into the first matching field from: preferred_fields → _INJECTABLE_FIELDS.
-    Adds a 'notes' key only as a last resort when no text field is found.
+    For dicts: injects into the first matching field (preferred_fields → _INJECTABLE_FIELDS).
+    For strings: appends the payload directly to the string so the agent reads it inline.
+    Adds a 'notes' key only as a last resort when no text field is found in a dict.
     """
+    if isinstance(record, str):
+        return record + "\n\n" + payload
     if not isinstance(record, dict):
         return record
     record = dict(record)  # copy — do not mutate original
