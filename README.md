@@ -2,7 +2,7 @@
 
 > ⚠️ **Under active development.** APIs, output formats, and attack implementations are changing frequently. Not yet suitable for production use.
 
-Systematic synthetic red-teaming for AI agents. Given a usecase description and operator policies, `redteam-core` automatically generates a threat model, builds purpose-built synthetic environments, and runs a full suite of attacks — all without touching real tools or data.
+Systematic synthetic red-teaming for AI agents. Given a usecase description and policies, `redteam-core` automatically generates a threat model, builds purpose-built synthetic environments (layer-1), and runs a full suite of attacks — all without touching real tools or data.
 
 ---
 
@@ -140,7 +140,7 @@ An interactive single-file HTML report is generated with `--output-html`. It inc
   - Each attack tab shows: attack-specific metadata (payloads, prompts, turn sequences), full conversation trace, security/utility evidence, judge reasoning, state diff
 - **Summary** — OWASP table (attacks run × violations per ASI category), policy violations, model comparison
 
-A sample report from a supply chain scenario is in [`runs/layer1_report_20260602_193727.html`](runs/layer1_report_20260602_193727.html).
+A sample report from a supply chain scenario is in [`sample_report.html`](sample_report.html) (open in browser — no server needed).
 
 ---
 
