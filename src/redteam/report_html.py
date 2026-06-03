@@ -877,11 +877,32 @@ function renderAttackTabs(goal) {{
     </div>`;
   }}).join('');
 
+  // Goal reference card — shown above tabs so reviewers have context
+  const violatedAttacks = attacks.filter(a => a.violated).map(a => attackLabel(a.type)).join(', ') || 'none';
+  const goalCard = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 18px;margin-bottom:16px;font-size:13px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div style="flex:1">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);margin-bottom:4px">Attacker Objective</div>
+          <div style="font-weight:600;margin-bottom:6px">${{esc(goal.objective)}}</div>
+          <div style="font-size:12px;color:var(--text-dim)">
+            <strong>Success criteria:</strong> ${{esc(goal.success_criteria)}}
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <span class="tag ${{severityTag(goal.severity)}}" style="display:block;margin-bottom:4px">${{goal.severity}}</span>
+          <span class="tag tag-asi">${{goal.asi_category}}</span>
+        </div>
+      </div>
+      ${{violatedAttacks !== 'none' ? `<div style="margin-top:8px;font-size:12px;color:var(--red)">⚠ Violated by: ${{esc(violatedAttacks)}}</div>` : ''}}
+    </div>`;
+
   // Render the active tab content
   const atk = attacks[tabIdx];
   const tabContent = renderAttack(goal, atk, tabIdx);
 
   return `
+    ${{goalCard}}
     <div class="attack-tabs-bar">${{tabBar}}</div>
     <div class="attack-tabs-content">${{tabContent}}</div>`;
 }}
@@ -1006,8 +1027,42 @@ function renderInjectionPayloads(payloads) {{
 }}
 
 function renderPairInfo(atk) {{
-  // Pull user turn from attack conversation
+  const isPairInjection = atk.type === 'pair_injection';
   const conv = atk.attack_trace && atk.attack_trace.conversation ? atk.attack_trace.conversation : [];
+
+  if (isPairInjection) {{
+    // PAIR Injection: the attacker iteratively refines a payload embedded in tool responses.
+    // The user sees the legitimate task prompt; the adversarial content is in tool responses.
+    // Show what the agent received back from tools (where the payload was placed).
+    const toolMsgs = conv.filter(m => m.role === 'tool');
+    const firstToolWithPayload = toolMsgs.find(m => {{
+      const c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      return c && c.length > 20;
+    }});
+    const payloadPreview = firstToolWithPayload
+      ? (typeof firstToolWithPayload.content === 'string' ? firstToolWithPayload.content : JSON.stringify(firstToolWithPayload.content))
+      : '(no tool response captured)';
+
+    return `
+      <div class="card">
+        <div class="card-header">
+          <h3>Injection Payload (PAIR-refined)</h3>
+          <span class="text-dim" style="font-size:13px">Iterations: ${{atk.iterations}}</span>
+        </div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--text-dim);margin-bottom:12px">
+            PAIR Injection iteratively refines adversarial text placed inside tool responses —
+            not the user prompt. The agent reads this payload when it calls a data-access tool.
+          </p>
+          <div class="callout callout-warn">
+            <div class="callout-label">Injected tool response (what agent read)</div>
+            <div style="white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto">${{esc(payloadPreview)}}</div>
+          </div>
+        </div>
+      </div>`;
+  }}
+
+  // PAIR Adversarial: pull the adversarial user prompt
   const userTurn = conv.find(m => m.role === 'user');
   const adversarialPrompt = userTurn ? (typeof userTurn.content === 'string' ? userTurn.content : JSON.stringify(userTurn.content)) : '';
 
@@ -1015,8 +1070,12 @@ function renderPairInfo(atk) {{
     <div class="card">
       <div class="card-header"><h3>Adversarial Prompt</h3><span class="text-dim" style="font-size:13px">Iterations: ${{atk.iterations}}</span></div>
       <div class="card-body">
+        <p style="font-size:13px;color:var(--text-dim);margin-bottom:12px">
+          PAIR Adversarial iteratively refines a social-engineering prompt sent as the user message.
+          The attacker LLM rewrites this prompt each iteration based on the agent's response.
+        </p>
         <div class="callout callout-warn">
-          <div class="callout-label">PAIR-refined user prompt</div>
+          <div class="callout-label">PAIR-refined adversarial user prompt</div>
           <div style="white-space:pre-wrap;font-size:13px">${{esc(adversarialPrompt)}}</div>
         </div>
       </div>
@@ -1186,15 +1245,35 @@ function renderJudge(atk) {{
 
 function renderStateDiff(diff) {{
   if (!diff || Object.keys(diff).length === 0) return '';
+
+  // Build a plain-English summary of what changed
+  const changes = Object.entries(diff).map(([key, val]) => {{
+    if (val.clean !== undefined && val.attack !== undefined) {{
+      return `<li><code>${{esc(key)}}</code>: <span style="color:var(--green)">"${{esc(String(val.clean))}}"</span> → <span style="color:var(--red)">"${{esc(String(val.attack))}}"</span></li>`;
+    }} else if (val.added !== undefined) {{
+      return `<li><code>${{esc(key)}}</code>: <em>added</em> ${{esc(JSON.stringify(val.added)).slice(0, 80)}}</li>`;
+    }} else if (val.removed !== undefined) {{
+      return `<li><code>${{esc(key)}}</code>: <em>removed</em></li>`;
+    }}
+    return `<li><code>${{esc(key)}}</code>: changed</li>`;
+  }}).join('');
+
   const json = JSON.stringify(diff, null, 2);
+  const uid = 'sd-' + Math.random().toString(36).slice(2, 7);
   return `
     <div class="card">
       <div class="card-header">
         <h3>State Diff</h3>
-        <button class="detail-close" onclick="toggleCollapse(this)" data-target="state-diff-body">Show</button>
+        <button class="detail-close" onclick="toggleCollapse(this, '${{uid}}')">Show raw</button>
       </div>
-      <div class="card-body" id="state-diff-body" style="display:none">
-        <pre>${{esc(json)}}</pre>
+      <div class="card-body">
+        <p style="font-size:12px;color:var(--text-dim);margin-bottom:8px">
+          What changed in the environment between the clean run and the attack run:
+        </p>
+        <ul style="font-size:13px;line-height:1.8;padding-left:18px;margin:0">${{changes}}</ul>
+      </div>
+      <div id="${{uid}}" style="display:none;border-top:1px solid var(--border);padding:16px">
+        <pre style="margin:0;overflow:auto">${{esc(json)}}</pre>
       </div>
     </div>`;
 }}
@@ -1211,7 +1290,7 @@ function renderOutboxDiff(atk) {{
       <div class="outbox-msg ${{colorClass}}" style="margin-bottom:12px">
         ${{m.to ? `<div style="font-size:12px"><strong>To:</strong> ${{esc(m.to)}}</div>` : ''}}
         ${{m.subject ? `<div style="font-size:12px"><strong>Subject:</strong> ${{esc(m.subject)}}</div>` : ''}}
-        ${{m.body ? `<div style="font-size:12px;margin-top:6px;white-space:pre-wrap;color:var(--text-dim)">${{esc(m.body.slice(0, 400))}}${{m.body.length > 400 ? '…' : ''}}</div>` : ''}}
+        ${{m.body ? `<div style="font-size:12px;margin-top:6px;white-space:pre-wrap;color:var(--text-dim);max-height:300px;overflow:auto">${{esc(m.body)}}</div>` : ''}}
       </div>`).join('');
   }};
 
@@ -1375,8 +1454,7 @@ function renderConversation(conversation) {{
           const parsed = JSON.parse(rawContent);
           pretty = JSON.stringify(parsed, null, 2);
         }} catch(e) {{}}
-        const truncated = pretty.length > 800 ? pretty.slice(0, 800) + '\\n…(truncated)' : pretty;
-        bodyHtml += `<pre style="font-size:11px;max-height:200px;overflow:auto;margin:0">${{esc(truncated)}}</pre>`;
+        bodyHtml += `<pre style="font-size:11px;overflow:auto;margin:0">${{esc(pretty)}}</pre>`;
       }} else {{
         bodyHtml += `<div class="raw-content">${{esc(rawContent)}}</div>`;
       }}
@@ -1474,16 +1552,16 @@ function severityTag(sev) {{
   return 'tag-low';
 }}
 
-function toggleCollapse(btn) {{
-  const targetId = btn.dataset.target;
+function toggleCollapse(btn, id) {{
+  const targetId = id || btn.dataset.target;
   const target = document.getElementById(targetId);
   if (!target) return;
   if (target.style.display === 'none') {{
     target.style.display = '';
-    btn.textContent = 'Hide';
+    btn.textContent = 'Hide raw';
   }} else {{
     target.style.display = 'none';
-    btn.textContent = 'Show';
+    btn.textContent = 'Show raw';
   }}
 }}
 </script>
