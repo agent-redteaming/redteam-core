@@ -69,6 +69,7 @@ def _build_report_data(report: Layer1Report) -> dict:
                 "judge_reasoning": ar.judge_reasoning,
                 "judge_confidence": ar.judge_confidence,
                 "injection_payloads": ar.injection_payloads,
+                "attack_metadata": ar.attack_metadata,
                 "security_checks": _parse_evidence(ar.security_evidence),
                 "utility_checks": _parse_evidence(ar.utility_evidence),
                 "clean_trace": _serialize_trace(ar.clean_trace),
