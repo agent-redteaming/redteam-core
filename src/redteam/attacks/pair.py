@@ -520,13 +520,27 @@ def run_pair(
             else:
                 meta["injection_payload"] = attack_content
 
-            # For injection mode, also capture a clean-vs-attack tool response diff
+            # For injection mode, capture a clean-vs-attack tool response diff.
+            # Find the attack tool call that actually contains the payload (not always [0]).
             if mode == "injection" and dry_run_trace.tool_calls and attack_trace.tool_calls:
-                clean_resp = dry_run_trace.tool_calls[0].response
-                attack_resp = attack_trace.tool_calls[0].response
                 import json as _json
-                meta["clean_tool_response"] = _json.dumps(clean_resp, default=str)[:500]
-                meta["attack_tool_response"] = _json.dumps(attack_resp, default=str)[:500]
+
+                def _has_payload(tc_response: Any) -> bool:
+                    s = _json.dumps(tc_response, default=str)
+                    return attack_content[:20] in s or "COMPLIANCE" in s or "SYSTEM" in s
+
+                # Pick the attack tool call that has the payload; fall back to [0]
+                best_atk_tc = next(
+                    (tc for tc in attack_trace.tool_calls if _has_payload(tc.response)),
+                    attack_trace.tool_calls[0],
+                )
+                # Find the matching clean tool call by name
+                best_clean_tc = next(
+                    (tc for tc in dry_run_trace.tool_calls if tc.name == best_atk_tc.name),
+                    dry_run_trace.tool_calls[0],
+                )
+                meta["clean_tool_response"] = _json.dumps(best_clean_tc.response, default=str)[:800]
+                meta["attack_tool_response"] = _json.dumps(best_atk_tc.response, default=str)[:800]
 
             result = AttackResult(
                 attack_type=attack_type,
