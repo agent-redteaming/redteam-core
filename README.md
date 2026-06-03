@@ -96,12 +96,12 @@ Environment variable overrides: `GENERATOR_TEMPERATURE`, `ATTACKER_TEMPERATURE`,
 Usecase + Policies
        │
        ▼
-  Risk Cards  ──── LLM generates 2-4 threat cards per run
+  Risk Cards  ──── LLM generates threat cards targeting the usecase & policies
        │
        ▼
-  Attacker Goals  ── 2-3 per risk card, each with specific success_criteria
+  Attacker Goals  ── per risk card, each with specific success_criteria
        │
-       ▼  (per goal × model)
+       ▼  (per goal)
   Synthetic Environment
     ├── Pydantic models (entities, relationships)
     ├── Tool functions (read tools + privileged action tools)
