@@ -1028,20 +1028,15 @@ function renderInjectionPayloads(payloads) {{
 
 function renderPairInfo(atk) {{
   const isPairInjection = atk.type === 'pair_injection';
-  const conv = atk.attack_trace && atk.attack_trace.conversation ? atk.attack_trace.conversation : [];
+  const meta = atk.attack_metadata || {{}};
 
   if (isPairInjection) {{
-    // PAIR Injection: the attacker iteratively refines a payload embedded in tool responses.
-    // The user sees the legitimate task prompt; the adversarial content is in tool responses.
-    // Show what the agent received back from tools (where the payload was placed).
-    const toolMsgs = conv.filter(m => m.role === 'tool');
-    const firstToolWithPayload = toolMsgs.find(m => {{
-      const c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-      return c && c.length > 20;
-    }});
-    const payloadPreview = firstToolWithPayload
-      ? (typeof firstToolWithPayload.content === 'string' ? firstToolWithPayload.content : JSON.stringify(firstToolWithPayload.content))
-      : '(no tool response captured)';
+    // PAIR Injection: iteratively refines adversarial text embedded in tool responses.
+    // The agent reads the legitimate task as its trigger; the adversarial content is in
+    // what tools return. The payload is the text PAIR kept refining each iteration.
+    const payload = meta.injection_payload || '';
+    const cleanResp = meta.clean_tool_response || '';
+    const attackResp = meta.attack_tool_response || '';
 
     return `
       <div class="card">
@@ -1051,32 +1046,49 @@ function renderPairInfo(atk) {{
         </div>
         <div class="card-body">
           <p style="font-size:13px;color:var(--text-dim);margin-bottom:12px">
-            PAIR Injection iteratively refines adversarial text placed inside tool responses —
-            not the user prompt. The agent reads this payload when it calls a data-access tool.
+            PAIR Injection iteratively refines adversarial text placed <strong>inside tool responses</strong>
+            (not the user prompt). The agent reads this when it calls a data-access tool.
+            The payload is embedded in an existing text field of a returned record.
           </p>
-          <div class="callout callout-warn">
-            <div class="callout-label">Injected tool response (what agent read)</div>
-            <div style="white-space:pre-wrap;font-size:12px;max-height:300px;overflow:auto">${{esc(payloadPreview)}}</div>
-          </div>
+          ${{payload ? `
+          <div class="callout callout-warn" style="margin-bottom:12px">
+            <div class="callout-label">Refined injection payload (adversarial text placed in tool response)</div>
+            <div style="white-space:pre-wrap;font-size:13px;overflow:auto">${{esc(payload)}}</div>
+          </div>` : ''}}
+          ${{cleanResp && attackResp ? `
+          <div class="diff-row" style="margin-top:12px">
+            <div class="diff-col">
+              <h4 style="color:var(--green)">Clean tool response</h4>
+              <div class="diff-clean"><pre style="font-size:11px;overflow:auto;margin:0">${{esc(cleanResp)}}</pre></div>
+            </div>
+            <div class="diff-col">
+              <h4 style="color:var(--red)">Attack tool response (with payload embedded)</h4>
+              <div class="diff-attack"><pre style="font-size:11px;overflow:auto;margin:0">${{esc(attackResp)}}</pre></div>
+            </div>
+          </div>` : ''}}
         </div>
       </div>`;
   }}
 
-  // PAIR Adversarial: pull the adversarial user prompt
-  const userTurn = conv.find(m => m.role === 'user');
-  const adversarialPrompt = userTurn ? (typeof userTurn.content === 'string' ? userTurn.content : JSON.stringify(userTurn.content)) : '';
+  // PAIR Adversarial: show the refined adversarial user prompt
+  const adversarialPrompt = meta.adversarial_prompt || (() => {{
+    // fallback: pull from conversation if metadata not available
+    const conv = atk.attack_trace && atk.attack_trace.conversation ? atk.attack_trace.conversation : [];
+    const userTurn = conv.find(m => m.role === 'user');
+    return userTurn ? (typeof userTurn.content === 'string' ? userTurn.content : JSON.stringify(userTurn.content)) : '';
+  }})();
 
   return `
     <div class="card">
       <div class="card-header"><h3>Adversarial Prompt</h3><span class="text-dim" style="font-size:13px">Iterations: ${{atk.iterations}}</span></div>
       <div class="card-body">
         <p style="font-size:13px;color:var(--text-dim);margin-bottom:12px">
-          PAIR Adversarial iteratively refines a social-engineering prompt sent as the user message.
-          The attacker LLM rewrites this prompt each iteration based on the agent's response.
+          PAIR Adversarial iteratively refines a social-engineering prompt sent as the <strong>user message</strong>.
+          The attacker LLM rewrites it each iteration based on the agent's response and tool calls.
         </p>
         <div class="callout callout-warn">
           <div class="callout-label">PAIR-refined adversarial user prompt</div>
-          <div style="white-space:pre-wrap;font-size:13px">${{esc(adversarialPrompt)}}</div>
+          <div style="white-space:pre-wrap;font-size:13px;overflow:auto">${{esc(adversarialPrompt)}}</div>
         </div>
       </div>
     </div>`;

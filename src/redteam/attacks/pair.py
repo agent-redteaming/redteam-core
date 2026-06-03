@@ -511,6 +511,23 @@ def run_pair(
                 f"Improvement used: {improvement[:100]}",
             ]
 
+            # Store the refined content in metadata for the report UI.
+            # adversarial mode: stores the final user prompt
+            # injection mode: stores the final payload text embedded in tool responses
+            meta: dict = {"improvement_notes": improvement[:200]}
+            if mode == "adversarial":
+                meta["adversarial_prompt"] = attack_content
+            else:
+                meta["injection_payload"] = attack_content
+
+            # For injection mode, also capture a clean-vs-attack tool response diff
+            if mode == "injection" and dry_run_trace.tool_calls and attack_trace.tool_calls:
+                clean_resp = dry_run_trace.tool_calls[0].response
+                attack_resp = attack_trace.tool_calls[0].response
+                import json as _json
+                meta["clean_tool_response"] = _json.dumps(clean_resp, default=str)[:500]
+                meta["attack_tool_response"] = _json.dumps(attack_resp, default=str)[:500]
+
             result = AttackResult(
                 attack_type=attack_type,
                 iterations_used=(iteration + 1),
@@ -521,6 +538,7 @@ def run_pair(
                 utility_evidence=[],
                 clean_trace=dry_run_trace,
                 attack_trace=attack_trace,
+                attack_metadata=meta,
             )
 
             if success:
